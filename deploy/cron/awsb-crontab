@@ -1,0 +1,53 @@
+# Attar World Sonar Bangla — scheduled jobs
+#
+# deploy/install.sh installs these automatically into the crontab of the user
+# that ran it. This file is the reference copy, so you can see what is
+# scheduled without running `crontab -l`, and reinstall it by hand if needed.
+#
+# To install manually (replace /home/ubuntu/awsb with your actual path):
+#     crontab -e
+# then paste the block below, with REPO_ROOT and LOG_DIR expanded.
+#
+# To see what is currently scheduled:
+#     crontab -l
+#
+# To check a job actually ran, look at its log:
+#     tail -50 ~/awsb-logs/sweep.log
+#     tail -50 ~/awsb-logs/backup.log
+#
+# NOTE ON TIMES: cron uses the server's timezone, which on a fresh Lightsail
+# instance is UTC, not IST. 02:30 below is 08:00 IST. To switch the box to
+# India time:  sudo timedatectl set-timezone Asia/Kolkata
+# Check with:  timedatectl
+
+# BEGIN AWSB — managed by deploy/install.sh, do not edit between these markers
+
+# ---------------------------------------------------------------------------
+# Stale reservation sweeper — every 10 minutes
+# ---------------------------------------------------------------------------
+# Stock is decremented when the customer starts checkout, not when they pay,
+# so two people cannot buy the last bottle at once (architecture §3.1). If a
+# customer abandons the payment page, that stock stays reserved until this job
+# releases it. RESERVATION_MINUTES in backend/.env (default 30) sets the age
+# threshold; this job only has to run often enough to be prompt about it.
+#
+# If this job stops running, abandoned checkouts silently eat your stock and
+# products will show as out of stock while you still have them on the shelf.
+*/10 * * * * cd /home/ubuntu/awsb/api && /usr/bin/env node src/scripts/release-stale-reservations.js >> /home/ubuntu/awsb-logs/sweep.log 2>&1
+
+# ---------------------------------------------------------------------------
+# Nightly database backup — 02:30 server time
+# ---------------------------------------------------------------------------
+# Dumps, gzips and timestamps the database, keeps N days locally, and uploads
+# to S3 if the AWS CLI is configured. See deploy/backup.sh.
+30 2 * * * /home/ubuntu/awsb/deploy/backup.sh >> /home/ubuntu/awsb-logs/backup.log 2>&1
+
+# ---------------------------------------------------------------------------
+# TLS certificate renewal — 03:15 server time
+# ---------------------------------------------------------------------------
+# certbot installs its own systemd timer as well, so this is a second safety
+# net. Renewal is a no-op until the certificate is within 30 days of expiry,
+# so running it daily is harmless.
+15 3 * * * /usr/bin/certbot renew --quiet --deploy-hook "systemctl reload nginx" >> /home/ubuntu/awsb-logs/certbot.log 2>&1
+
+# END AWSB

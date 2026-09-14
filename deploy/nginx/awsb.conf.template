@@ -1,0 +1,256 @@
+# Attar World Sonar Bangla — nginx vhost template
+#
+# Placeholders substituted by deploy/install.sh:
+#   {{DOMAIN}}       apex domain, e.g. attarworldsonarbangla.com
+#   {{API_DOMAIN}}   api subdomain, e.g. api.attarworldsonarbangla.com
+#   {{API_PORT}}     Express API port (default 4000)
+#   {{WEB_PORT}}     Next.js port when hosted on this box (default 3000)
+#
+# This file is written as PLAIN HTTP (port 80) on purpose. certbot --nginx
+# rewrites it in place to add the TLS listener, the certificate paths and the
+# http->https redirect. Shipping a 443 block before a certificate exists would
+# make nginx fail to start, which would in turn stop certbot from ever running.
+#
+# Do not hand-edit the installed copy at /etc/nginx/sites-available/awsb.conf:
+# edit this template and re-run install.sh, or your change is lost on update.
+
+# ---------------------------------------------------------------------------
+# Shared proxy settings
+# ---------------------------------------------------------------------------
+proxy_http_version 1.1;
+
+# ---------------------------------------------------------------------------
+# API  —  {{API_DOMAIN}}  ->  127.0.0.1:{{API_PORT}}
+# ---------------------------------------------------------------------------
+server {
+    listen 80;
+    listen [::]:80;
+    server_name {{API_DOMAIN}};
+
+    # Label photos are uploaded to the admin shipping flow and OCR'd.
+    # A phone camera JPEG is routinely 4-8 MB.
+    client_max_body_size 10M;
+    client_body_timeout 120s;
+
+    # Security headers. HSTS is deliberately NOT set here — certbot adds the
+    # https server block, and sending HSTS over plain http is ignored anyway.
+    # Add HSTS only once https is confirmed working (see deploy/README.md).
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header X-XSS-Protection "0" always;
+    add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;
+
+    # Never advertise the nginx version.
+    server_tokens off;
+
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 5;
+    gzip_min_length 1024;
+    gzip_types
+        application/json
+        application/javascript
+        application/xml
+        text/css
+        text/plain
+        text/xml
+        image/svg+xml;
+
+    # Let's Encrypt renewal probe.
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/html;
+        allow all;
+    }
+
+    # -----------------------------------------------------------------------
+    # RAZORPAY WEBHOOK — RAW BODY, DO NOT TOUCH
+    # -----------------------------------------------------------------------
+    # The signature is an HMAC-SHA256 over the EXACT bytes Razorpay sent,
+    # compared against the X-Razorpay-Signature header. Anything that
+    # rewrites, re-chunks, re-compresses or re-encodes the body invalidates
+    # it, and every webhook then fails signature verification with no obvious
+    # cause. Hence, for this location only:
+    #   - proxy_request_buffering off : stream bytes straight through
+    #   - gzip off                    : never recompress
+    #   - no add_header / sub_filter  : never alter the payload
+    # See docs/01-architecture.md §3.4.
+    location = /api/v1/webhooks/razorpay {
+        proxy_pass http://127.0.0.1:{{API_PORT}};
+
+        proxy_request_buffering off;
+        proxy_buffering off;
+        gzip off;
+
+        # Pass the body through untouched and let the app read it raw.
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Content-Type $http_content_type;
+        proxy_set_header X-Razorpay-Signature $http_x_razorpay_signature;
+        proxy_set_header X-Razorpay-Event-Id $http_x_razorpay_event_id;
+
+        # Razorpay retries on timeout; keep this generous but bounded.
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+
+        # A webhook body is small; do not apply the 10M upload allowance.
+        client_max_body_size 2M;
+    }
+
+    # -----------------------------------------------------------------------
+    # Everything else on the API
+    # -----------------------------------------------------------------------
+    location / {
+        proxy_pass http://127.0.0.1:{{API_PORT}};
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 120s;
+        proxy_read_timeout 120s;
+    }
+}
+
+{{WEB_BLOCK_START}}
+# ---------------------------------------------------------------------------
+# Storefront  —  {{DOMAIN}}  ->  127.0.0.1:{{WEB_PORT}}   (OPTIONAL)
+# ---------------------------------------------------------------------------
+# Only present when install.sh was run with --with-web. If the storefront is
+# hosted on Vercel/Amplify instead, this whole block is omitted and the apex
+# domain's DNS points at the host, not at this instance.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name {{DOMAIN}} www.{{DOMAIN}};
+
+    client_max_body_size 10M;
+
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;
+
+    server_tokens off;
+
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 5;
+    gzip_min_length 1024;
+    gzip_types
+        application/json
+        application/javascript
+        application/xml
+        text/css
+        text/plain
+        text/xml
+        image/svg+xml;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/html;
+        allow all;
+    }
+
+    # Next.js build assets are content-hashed and safe to cache hard.
+    location /_next/static/ {
+        proxy_pass http://127.0.0.1:{{WEB_PORT}};
+        proxy_set_header Host $host;
+        proxy_cache_valid 200 60m;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:{{WEB_PORT}};
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 120s;
+        proxy_read_timeout 120s;
+    }
+}
+{{WEB_BLOCK_END}}
+
+{{ADMIN_BLOCK_START}}
+# ---------------------------------------------------------------------------
+# Admin panel  —  admin.{{DOMAIN}}  ->  127.0.0.1:{{ADMIN_PORT}}   (OPTIONAL)
+# ---------------------------------------------------------------------------
+# A SEPARATE Next.js app from the storefront, on its own origin. That boundary
+# is the point: an XSS bug in the shop cannot reach an admin token held here,
+# and customers never download the admin bundle.
+#
+# Only present when install.sh was run with --with-admin.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name admin.{{DOMAIN}};
+
+    # Label photos are uploaded here for AWB scanning.
+    client_max_body_size 10M;
+
+    add_header X-Content-Type-Options "nosniff" always;
+    # DENY, not SAMEORIGIN: nothing should ever frame the admin panel.
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;
+    # Belt and braces alongside the app's own headers.
+    add_header X-Robots-Tag "noindex, nofollow" always;
+
+    server_tokens off;
+
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 5;
+    gzip_min_length 1024;
+    gzip_types
+        application/json
+        application/javascript
+        application/xml
+        text/css
+        text/plain
+        text/xml
+        image/svg+xml;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/html;
+        allow all;
+    }
+
+    location /_next/static/ {
+        proxy_pass http://127.0.0.1:{{ADMIN_PORT}};
+        proxy_set_header Host $host;
+        proxy_cache_valid 200 60m;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:{{ADMIN_PORT}};
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 120s;
+        proxy_read_timeout 120s;
+    }
+}
+{{ADMIN_BLOCK_END}}

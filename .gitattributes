@@ -1,0 +1,8 @@
+# Shell scripts, nginx templates and SQL run on Linux. CRLF line endings make
+# bash fail with "$'\r': command not found" and silently disable `set -e`,
+# so these must always check out with LF regardless of platform.
+*.sh        text eol=lf
+*.template  text eol=lf
+*.sql       text eol=lf
+*.cjs       text eol=lf
+awsb-crontab text eol=lf
