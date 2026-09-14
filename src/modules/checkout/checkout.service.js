@@ -15,15 +15,15 @@ const razorpay = new Razorpay({
 async function nextOrderNumber(conn) {
   const year = new Date().getUTCFullYear();
   await conn.query(
-    `INSERT INTO order_number_seq (year_part, last_value) VALUES (?, 1)
-     ON DUPLICATE KEY UPDATE last_value = last_value + 1`,
+    `INSERT INTO order_number_seq (year_part, seq_value) VALUES (?, 1)
+     ON DUPLICATE KEY UPDATE seq_value = seq_value + 1`,
     [year]
   );
   const [[row]] = await conn.query(
-    'SELECT last_value FROM order_number_seq WHERE year_part = ? FOR UPDATE',
+    'SELECT seq_value FROM order_number_seq WHERE year_part = ? FOR UPDATE',
     [year]
   );
-  return `AWSB-${year}-${String(row.last_value).padStart(5, '0')}`;
+  return `AWSB-${year}-${String(row.seq_value).padStart(5, '0')}`;
 }
 
 async function loadCoupon(conn, code, customerId, subtotalPaise) {

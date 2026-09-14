@@ -5,6 +5,10 @@ import { z } from 'zod';
 // the process immediately with a readable message, not surface as a failed
 // payment or an unsigned webhook hours later.
 
+/** Treat an empty or whitespace-only env value as absent, not as "". */
+const blank = (schema) =>
+  z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? undefined : v), schema.optional());
+
 const bool = z
   .enum(['true', 'false'])
   .transform((v) => v === 'true');
@@ -15,6 +19,10 @@ const schema = z.object({
 
   SITE_URL: z.string().url(),
   API_URL: z.string().url(),
+  // The admin panel is a separate deployment on its own origin, so it
+  // needs an explicit CORS entry. Optional: a shop that has not put the
+  // admin panel online yet still boots.
+  ADMIN_URL: blank(z.string().url()),
 
   DB_HOST: z.string().min(1),
   DB_PORT: z.coerce.number().int().positive().default(3306),
@@ -44,12 +52,14 @@ const schema = z.object({
   ADMIN_ALERT_EMAIL: z.string().email(),
 
   STORAGE_DRIVER: z.enum(['s3', 'local']).default('s3'),
-  S3_ENDPOINT: z.string().url().optional(),
-  S3_REGION: z.string().optional(),
-  S3_BUCKET: z.string().optional(),
-  S3_ACCESS_KEY_ID: z.string().optional(),
-  S3_SECRET_ACCESS_KEY: z.string().optional(),
-  S3_PUBLIC_BASE_URL: z.string().url().optional(),
+  // `blank()` first: a key present-but-empty in .env (S3_PUBLIC_BASE_URL=)
+  // arrives as "", which .optional() rejects because it is not undefined.
+  S3_ENDPOINT: blank(z.string().url()),
+  S3_REGION: blank(z.string()),
+  S3_BUCKET: blank(z.string()),
+  S3_ACCESS_KEY_ID: blank(z.string()),
+  S3_SECRET_ACCESS_KEY: blank(z.string()),
+  S3_PUBLIC_BASE_URL: blank(z.string().url()),
 
   RESERVATION_MINUTES: z.coerce.number().int().positive().default(30),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(900_000),

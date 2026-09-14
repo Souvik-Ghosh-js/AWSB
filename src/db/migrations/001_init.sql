@@ -466,5 +466,5 @@ CREATE TABLE settings (
 -- Counter for human-facing order numbers (AWSB-2026-00001).
 CREATE TABLE order_number_seq (
   year_part  SMALLINT UNSIGNED PRIMARY KEY,
-  last_value INT UNSIGNED NOT NULL DEFAULT 0
+  seq_value INT UNSIGNED NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

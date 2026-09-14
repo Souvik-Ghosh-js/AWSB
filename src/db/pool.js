@@ -48,7 +48,9 @@ export async function withTransaction(fn) {
 
 export async function healthcheck() {
   const [rows] = await pool.query('SELECT 1 AS ok');
-  return rows[0]?.ok === 1;
+  // Loose compare on purpose: bigNumberStrings makes MySQL hand back "1" as a
+  // string, so a strict === 1 reports a perfectly healthy database as dead.
+  return Number(rows[0]?.ok) === 1;
 }
 
 export async function closePool() {

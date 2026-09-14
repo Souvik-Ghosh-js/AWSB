@@ -31,7 +31,13 @@ export function createApp() {
 
   app.use(
     cors({
-      origin: [env.SITE_URL, ...(isProd ? [] : ['http://localhost:3000'])],
+      // Storefront and admin panel live on different origins by design.
+      // Boolean filter drops ADMIN_URL when it is not configured.
+      origin: [
+        env.SITE_URL,
+        env.ADMIN_URL,
+        ...(isProd ? [] : ['http://localhost:3000', 'http://localhost:3001']),
+      ].filter(Boolean),
       credentials: true,
       methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
     })
