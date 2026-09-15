@@ -207,6 +207,152 @@ router.post(
 // ---------------------------------------------------------------- admin aliases
 
 /**
+ * GET /admin/dashboard — the panel's shape, not the API's.
+ *
+ * This OVERRIDES the dashboard router's own /dashboard (it is mounted first,
+ * and Express takes the first match). The two disagreed on every single field:
+ *
+ *   panel expects          API returned
+ *   -------------          ------------
+ *   today/last7Days/...    revenue.{today,last_7_days,last_30_days}
+ *   {revenuePaise,orderCount}  {revenue_paise,orders}
+ *   ordersByStatus         orders_by_status
+ *   topProducts[]          top_products[]
+ *   recentOrders[]         recent_orders[]
+ *   lowStock[]  (rows!)    low_stock_count  (a number)
+ *   pendingReviewCount     — absent —
+ *   newFeedbackCount       — absent —
+ *
+ * `data.lowStock.length` therefore threw "Cannot read properties of undefined"
+ * and took the whole dashboard down the moment anyone signed in: the panel
+ * rendered a crash, not a page, so logging in appeared to do nothing.
+ *
+ * Fixed here rather than in the panel because the client casts the response
+ * straight to AdminDashboard with no transform, and because every other admin
+ * screen already consumes camelCase — the API is the odd one out.
+ */
+router.get(
+  '/admin/dashboard',
+  requireAdmin('staff'),
+  asyncHandler(async (_req, res) => {
+    const tile = (row) => ({
+      revenuePaise: Number(row?.revenue_paise ?? 0),
+      orderCount: Number(row?.orders ?? 0),
+    });
+
+    const since = async (daysBack) => {
+      const [[row]] = await pool.query(
+        `SELECT COALESCE(SUM(total_paise), 0) AS revenue_paise, COUNT(*) AS orders
+           FROM orders
+          WHERE payment_status = 'paid'
+            AND COALESCE(placed_at, created_at) >= DATE_SUB(CURDATE(), INTERVAL ? DAY)`,
+        [daysBack]
+      );
+      return row;
+    };
+
+    const [today, last7, last30] = await Promise.all([since(0), since(6), since(29)]);
+
+    const [[allTime]] = await pool.query(
+      `SELECT COALESCE(SUM(total_paise), 0) AS revenue_paise, COUNT(*) AS orders
+         FROM orders WHERE payment_status = 'paid'`
+    );
+
+    const [statusRows] = await pool.query(
+      'SELECT status, COUNT(*) AS n FROM orders GROUP BY status'
+    );
+
+    const [topRows] = await pool.query(
+      `SELECT p.id AS product_id, p.name, p.slug,
+              SUM(oi.quantity) AS units_sold,
+              SUM(oi.line_total_paise) AS revenue_paise
+         FROM order_items oi
+         JOIN orders o ON o.id = oi.order_id
+         LEFT JOIN products p ON p.id = oi.product_id
+        WHERE o.payment_status = 'paid'
+          AND COALESCE(o.placed_at, o.created_at) >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
+        GROUP BY p.id, p.name, p.slug
+        ORDER BY units_sold DESC
+        LIMIT 5`
+    );
+
+    // The rows themselves, not a count — this is the field that crashed.
+    const [lowStockRows] = await pool.query(
+      `SELECT v.id AS variant_id, v.sku, v.size_ml, v.stock_qty, v.low_stock_threshold,
+              p.id AS product_id, p.name AS product_name, p.slug AS product_slug
+         FROM product_variants v
+         JOIN products p ON p.id = v.product_id
+        WHERE v.stock_qty <= v.low_stock_threshold
+          AND v.is_enabled = TRUE
+          AND p.deleted_at IS NULL
+        ORDER BY v.stock_qty ASC, p.name ASC
+        LIMIT 20`
+    );
+
+    const [recentRows] = await pool.query(
+      `SELECT o.id, o.order_number, o.status, o.payment_status, o.total_paise,
+              o.ship_full_name, o.ship_city, o.ship_pincode, o.ship_zone,
+              o.placed_at, o.created_at,
+              (SELECT COALESCE(SUM(oi.quantity), 0)
+                 FROM order_items oi WHERE oi.order_id = o.id) AS item_count
+         FROM orders o
+        ORDER BY o.created_at DESC
+        LIMIT 10`
+    );
+
+    const [[reviews]] = await pool.query(
+      "SELECT COUNT(*) AS n FROM reviews WHERE status = 'pending'"
+    );
+    const [[feedback]] = await pool.query(
+      "SELECT COUNT(*) AS n FROM feedback WHERE status = 'new'"
+    );
+
+    const asDate = (v) => (v instanceof Date ? v.toISOString() : (v ?? null));
+
+    res.json({
+      today: tile(today),
+      last7Days: tile(last7),
+      last30Days: tile(last30),
+      allTime: tile(allTime),
+      ordersByStatus: Object.fromEntries(statusRows.map((r) => [r.status, Number(r.n)])),
+      topProducts: topRows.map((r) => ({
+        productId: Number(r.product_id),
+        name: r.name,
+        slug: r.slug,
+        unitsSold: Number(r.units_sold),
+        revenuePaise: Number(r.revenue_paise),
+      })),
+      lowStock: lowStockRows.map((r) => ({
+        variantId: Number(r.variant_id),
+        productId: Number(r.product_id),
+        productName: r.product_name,
+        productSlug: r.product_slug,
+        sizeMl: Number(r.size_ml),
+        sku: r.sku,
+        stockQty: Number(r.stock_qty),
+        lowStockThreshold: Number(r.low_stock_threshold),
+      })),
+      recentOrders: recentRows.map((r) => ({
+        id: Number(r.id),
+        orderNumber: r.order_number,
+        status: r.status,
+        paymentStatus: r.payment_status,
+        totalPaise: Number(r.total_paise),
+        itemCount: Number(r.item_count),
+        shipFullName: r.ship_full_name,
+        shipCity: r.ship_city,
+        shipPincode: r.ship_pincode,
+        shipZone: r.ship_zone,
+        placedAt: asDate(r.placed_at),
+        createdAt: asDate(r.created_at),
+      })),
+      pendingReviewCount: Number(reviews.n),
+      newFeedbackCount: Number(feedback.n),
+    });
+  })
+);
+
+/**
  * POST /admin/auth/login — sign in to the admin panel.
  *
  * The real implementation is POST /api/v1/auth/admin/login (auth.routes.js,
