@@ -282,7 +282,7 @@ router.get(
          LEFT JOIN products p ON p.id = v.product_id
         WHERE o.payment_status = 'paid'
           AND COALESCE(o.placed_at, o.created_at) >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
-        GROUP BY product_id, name, slug
+        GROUP BY p.id, p.name, p.slug, oi.product_name
         ORDER BY units_sold DESC
         LIMIT 5`
     );
