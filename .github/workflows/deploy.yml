@@ -1,0 +1,137 @@
+name: Deploy
+
+# Only main, and only after CI has passed on that same commit.
+#
+# `workflow_run` rather than `needs:` because CI runs on every branch; this
+# waits for the CI run that corresponds to a push to main and refuses to deploy
+# if it was not successful.
+on:
+  workflow_run:
+    workflows: ['CI']
+    branches: [main]
+    types: [completed]
+  # Manual trigger, for redeploying the current main without a new commit.
+  workflow_dispatch:
+    inputs:
+      skip_migrate:
+        description: 'Skip database migrations'
+        type: boolean
+        default: false
+
+# Never let two deploys overlap: the second would git-pull underneath the
+# first's npm ci. Queue instead of cancelling — a half-finished deploy that
+# gets cancelled leaves the box in an unknown state.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to Lightsail
+    runs-on: ubuntu-latest
+
+    # The workflow_run trigger fires on failure too, so the result must be
+    # checked explicitly. Without this a red CI run would still deploy.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    environment:
+      name: production
+      url: https://api.attarworldsonarbangla.com
+
+    steps:
+      - name: Report what is being deployed
+        run: |
+          echo "Trigger: ${{ github.event_name }}"
+          echo "Commit:  ${{ github.event.workflow_run.head_sha || github.sha }}"
+
+      - name: Set up the SSH key
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+
+          # Pin the host key. Without this, StrictHostKeyChecking would have to
+          # be disabled, and a deploy could be silently redirected to another
+          # machine that answers on that address.
+          printf '%s\n' "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER: ${{ secrets.DEPLOY_USER }}
+          APP_DIR: ${{ secrets.DEPLOY_PATH }}
+          SKIP_MIGRATE: ${{ inputs.skip_migrate && '--skip-migrate' || '' }}
+        run: |
+          set -euo pipefail
+
+          # -o BatchMode: fail rather than hang forever on a password prompt.
+          ssh -i ~/.ssh/id_deploy \
+              -o BatchMode=yes \
+              -o StrictHostKeyChecking=yes \
+              -o ConnectTimeout=20 \
+              "${USER}@${HOST}" \
+              "bash -lc 'set -euo pipefail; cd ${APP_DIR} && git fetch --all --prune && git reset --hard origin/main && bash deploy/update.sh ${SKIP_MIGRATE}'"
+
+      # update.sh health-checks and rolls back on its own, but it does that
+      # from INSIDE the box against 127.0.0.1. This verifies the service is
+      # reachable through nginx and TLS from the outside, which is what a
+      # customer actually touches.
+      - name: Smoke test through the public endpoint
+        run: |
+          set -euo pipefail
+
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            body="$(curl -fsS --max-time 10 https://api.attarworldsonarbangla.com/api/v1/health || true)"
+            echo "attempt ${attempt}: ${body:-<no response>}"
+
+            if echo "${body}" | grep -q '"ok":true'; then
+              # ok:true alone is not enough — the API reports ok while the
+              # database is unreachable, and every real request would 500.
+              if echo "${body}" | grep -q '"db":true'; then
+                echo "Healthy: API and database both responding."
+                exit 0
+              fi
+              echo "API is up but the DATABASE is not. Not treating this as a pass."
+            fi
+
+            sleep 6
+          done
+
+          echo "::error::Health check never passed. The API may be down — check 'pm2 logs awsb-api'."
+          exit 1
+
+      # The admin login 404 shipped despite everything being "up". Verify the
+      # sign-in route answers, since a 404 here locks staff out of the shop
+      # while every other signal stays green.
+      - name: Verify the admin sign-in route exists
+        run: |
+          set -euo pipefail
+
+          code="$(curl -s -o /dev/null -w '%{http_code}' \
+            -X POST -H 'Content-Type: application/json' \
+            -d '{"email":"deploy-probe@example.invalid","password":"x"}' \
+            --max-time 15 \
+            https://api.attarworldsonarbangla.com/api/v1/admin/auth/login)"
+
+          echo "POST /api/v1/admin/auth/login -> ${code}"
+
+          # 401 = route works, credentials rejected (expected).
+          # 400 = route works, validation rejected the probe (also fine).
+          # 404 = the route is missing. That is the bug this step exists for.
+          case "${code}" in
+            401|400) echo "Sign-in route is reachable." ;;
+            404)     echo "::error::Admin sign-in returns 404 — staff cannot log in."; exit 1 ;;
+            *)       echo "::warning::Unexpected status ${code} from the sign-in route." ;;
+          esac
+
+      - name: Clean up the key
+        if: always()
+        run: rm -f ~/.ssh/id_deploy

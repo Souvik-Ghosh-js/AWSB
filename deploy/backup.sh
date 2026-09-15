@@ -39,7 +39,14 @@ die()  { printf '%sERROR:%s %s\n' "${C_RED}" "${C_RESET}" "$*" >&2; exit 1; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-ENV_FILE="${REPO_ROOT}/backend/.env"
+# Split layout keeps .env beside src/ (this repo IS the API); the legacy
+# monorepo keeps it under backend/. Prefer whichever exists — a backup that
+# cannot read DB credentials is a backup that silently does not happen.
+if [[ -f "${REPO_ROOT}/backend/.env" ]]; then
+    ENV_FILE="${REPO_ROOT}/backend/.env"
+else
+    ENV_FILE="${REPO_ROOT}/.env"
+fi
 
 BACKUP_DIR="${AWSB_BACKUP_DIR:-${HOME}/awsb-backups}"
 RETENTION_DAYS="${AWSB_BACKUP_RETENTION_DAYS:-14}"

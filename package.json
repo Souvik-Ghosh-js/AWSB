@@ -15,7 +15,8 @@
     "seed": "node src/db/seed.js",
     "create-admin": "node src/scripts/create-admin.js",
     "sweep": "node src/scripts/release-stale-reservations.js",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/",
+    "check:routes": "node scripts/ci/check-routes.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.723.0",

@@ -13,9 +13,26 @@
 const os = require('node:os');
 const path = require('node:path');
 
-// deploy/ sits next to backend/ and frontend/ in the repo, so the app root is one up.
+const fs = require('node:fs');
+
 const REPO_ROOT = path.resolve(__dirname, '..');
-const API_DIR = path.join(REPO_ROOT, 'backend');
+
+/**
+ * Two layouts, detected rather than assumed — see the same note in update.sh.
+ *
+ *   MONOREPO (legacy): backend/, frontend/ and admin/ are siblings one level
+ *                      up from deploy/. Boxes provisioned before the repo split
+ *                      still look like this on disk.
+ *   SPLIT    (current): this repo IS the API; deploy/ sits beside src/. The
+ *                      storefront and admin panel are separate repositories
+ *                      deployed elsewhere, so only awsb-api is startable here.
+ *
+ * Getting this wrong is not a subtle failure: pm2 would be handed a cwd of
+ * <repo>/backend that does not exist, and the API would refuse to start.
+ */
+const IS_MONOREPO = fs.existsSync(path.join(REPO_ROOT, 'backend', 'package.json'));
+
+const API_DIR = IS_MONOREPO ? path.join(REPO_ROOT, 'backend') : REPO_ROOT;
 const WEB_DIR = path.join(REPO_ROOT, 'frontend');
 const ADMIN_DIR = path.join(REPO_ROOT, 'admin');
 const LOG_DIR = path.join(os.homedir(), 'awsb-logs');
@@ -190,3 +207,11 @@ module.exports = {
     },
   ],
 };
+
+// In the split layout frontend/ and admin/ are not on this box at all, so
+// advertising awsb-web and awsb-admin would let a stray
+// `pm2 start ecosystem.config.cjs` try to launch two apps whose cwd does not
+// exist. Only offer what can actually run.
+if (!IS_MONOREPO) {
+  module.exports.apps = module.exports.apps.filter((app) => app.name === 'awsb-api');
+}

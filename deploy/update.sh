@@ -43,8 +43,35 @@ die()  { printf '%sERROR:%s %s\n' "${C_RED}" "${C_RESET}" "$*" >&2; exit 1; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-API_DIR="${REPO_ROOT}/backend"
-WEB_DIR="${REPO_ROOT}/frontend"
+
+# Two layouts are supported, because the code moved and deployed boxes did not.
+#
+#   SPLIT     (current): this repo IS the API. deploy/ sits beside src/, so
+#                        REPO_ROOT is the API directory itself. The storefront
+#                        and admin panel live in their own repositories and are
+#                        deployed separately (Netlify), so there is no frontend
+#                        to build here.
+#   MONOREPO  (legacy):  backend/, frontend/ and admin/ are siblings under
+#                        REPO_ROOT, which is what the original installer laid
+#                        down and what any box provisioned before the split
+#                        still has on disk.
+#
+# Detect rather than assume: a box that has not been re-cloned must keep
+# working, and a fresh clone of the split repo must work without flags.
+if [[ -f "${REPO_ROOT}/backend/package.json" ]]; then
+    LAYOUT="monorepo"
+    API_DIR="${REPO_ROOT}/backend"
+    WEB_DIR="${REPO_ROOT}/frontend"
+elif [[ -f "${REPO_ROOT}/package.json" ]] && [[ -f "${REPO_ROOT}/src/server.js" ]]; then
+    LAYOUT="split"
+    API_DIR="${REPO_ROOT}"
+    WEB_DIR=""
+else
+    echo "ERROR: cannot find the API. Looked for backend/package.json and" >&2
+    echo "       package.json+src/server.js under ${REPO_ROOT}." >&2
+    exit 1
+fi
+
 ECOSYSTEM="${SCRIPT_DIR}/ecosystem.config.cjs"
 
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:4000/api/v1/health}"
@@ -96,14 +123,15 @@ preflight() {
     step "Preflight"
 
     [[ "${EUID}" -ne 0 ]] || die "Do not run this as root. Run it as the user that owns the app."
-    [[ -f "${API_DIR}/package.json" ]] || die "Cannot find backend/package.json under ${REPO_ROOT}."
+    [[ -f "${API_DIR}/package.json" ]] || die "Cannot find the API's package.json under ${API_DIR}."
     command -v pm2 >/dev/null 2>&1 || die "pm2 is not installed. Run deploy/install.sh first."
 
     if [[ ! -f "${API_DIR}/.env" ]]; then
-        die "backend/.env is missing. Run deploy/install.sh first."
+        die "The API's .env is missing (expected ${API_DIR}/.env). Run deploy/install.sh first."
     fi
 
     log "Repository: ${REPO_ROOT}"
+    log "Layout:     ${LAYOUT} (API at ${API_DIR})"
 }
 
 # ---------------------------------------------------------------------------
@@ -224,6 +252,14 @@ run_migrations() {
 }
 
 build_web() {
+    # In the split layout the storefront is its own repository, deployed
+    # elsewhere (Netlify). There is no frontend/ here to build, and pulling
+    # this repo cannot change the storefront.
+    if [[ "${LAYOUT}" == "split" ]]; then
+        log "Split layout: the storefront deploys from its own repository."
+        return 0
+    fi
+
     # Only rebuild if the storefront is actually served from this box, which
     # we detect by pm2 knowing about it.
     if ! pm2 describe awsb-web >/dev/null 2>&1; then
