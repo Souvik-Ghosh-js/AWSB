@@ -262,16 +262,27 @@ router.get(
       'SELECT status, COUNT(*) AS n FROM orders GROUP BY status'
     );
 
+    // order_items has NO product_id — only variant_id, plus the denormalised
+    // product_name/sku captured at purchase time. Reaching the product row
+    // means going through product_variants. (Joining on oi.product_id is what
+    // produced ER_BAD_FIELD_ERROR and 500'd the whole dashboard.)
+    //
+    // LEFT JOINs throughout: a product deleted since the sale must not drop
+    // its revenue out of the report, so fall back to the name stored on the
+    // order line.
     const [topRows] = await pool.query(
-      `SELECT p.id AS product_id, p.name, p.slug,
+      `SELECT COALESCE(p.id, 0) AS product_id,
+              COALESCE(p.name, oi.product_name) AS name,
+              COALESCE(p.slug, '') AS slug,
               SUM(oi.quantity) AS units_sold,
               SUM(oi.line_total_paise) AS revenue_paise
          FROM order_items oi
          JOIN orders o ON o.id = oi.order_id
-         LEFT JOIN products p ON p.id = oi.product_id
+         LEFT JOIN product_variants v ON v.id = oi.variant_id
+         LEFT JOIN products p ON p.id = v.product_id
         WHERE o.payment_status = 'paid'
           AND COALESCE(o.placed_at, o.created_at) >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
-        GROUP BY p.id, p.name, p.slug
+        GROUP BY product_id, name, slug
         ORDER BY units_sold DESC
         LIMIT 5`
     );
