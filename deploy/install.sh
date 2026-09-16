@@ -157,11 +157,29 @@ preflight() {
     local script_dir
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     REPO_ROOT="$(cd "${script_dir}/.." && pwd)"
-    [[ -f "${REPO_ROOT}/backend/package.json" ]] \
-        || die "Cannot find backend/package.json relative to ${script_dir}.
+
+    # Two layouts, same detection as deploy/update.sh -- see the long comment
+    # there. install.sh historically only understood the monorepo layout
+    # (backend/, frontend/, admin/ as siblings under REPO_ROOT) and hard-died
+    # on anything else, which meant it could not even be re-run against a box
+    # that had migrated to the split layout -- the thing you would actually
+    # reach for to regenerate a stale nginx config, such as the uploads alias
+    # this same patch adds below.
+    if [[ -f "${REPO_ROOT}/backend/package.json" ]]; then
+        LAYOUT="monorepo"
+        API_DIR="${REPO_ROOT}/backend"
+        UPLOADS_DIR="${API_DIR}/uploads"
+    elif [[ -f "${REPO_ROOT}/package.json" ]] && [[ -f "${REPO_ROOT}/src/server.js" ]]; then
+        LAYOUT="split"
+        API_DIR="${REPO_ROOT}"
+        UPLOADS_DIR="${API_DIR}/uploads"
+    else
+        die "Cannot find the API relative to ${script_dir}.
   Run this script from inside the checked-out repository:
       cd ~/awsb && bash deploy/install.sh ..."
+    fi
     log "Repository: ${REPO_ROOT}"
+    log "Layout:     ${LAYOUT} (API at ${API_DIR})"
 
     RUN_USER="$(id -un)"
     RUN_HOME="$(getent passwd "${RUN_USER}" | cut -d: -f6)"
@@ -889,6 +907,7 @@ configure_nginx() {
         -e "s|{{API_PORT}}|${API_PORT}|g" \
         -e "s|{{WEB_PORT}}|${WEB_PORT}|g" \
         -e "s|{{ADMIN_PORT}}|${ADMIN_PORT}|g" \
+        -e "s|{{UPLOADS_DIR}}|${UPLOADS_DIR}|g" \
         "${template}" > "${tmp}"
 
     if [[ "${WITH_WEB}" == "yes" ]]; then

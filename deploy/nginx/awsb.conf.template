@@ -102,6 +102,34 @@ server {
     }
 
     # -----------------------------------------------------------------------
+    # Product photos and scanned courier labels (STORAGE_DRIVER=local only).
+    #
+    # Served straight from disk by nginx; Node never sees these requests, so a
+    # busy image request doesn't cost an Express worker. {{UPLOADS_DIR}} is
+    # filled in by install.sh from THIS checkout's own layout at install
+    # time -- it is NOT automatically the same thing as
+    # backend/src/services/storage/index.js writing to
+    # path.join(process.cwd(), 'uploads'), which resolves relative to
+    # wherever the API process happens to be started from. If those two ever
+    # drift apart -- e.g. the repo moves from a monorepo layout
+    # (repo-root/backend/) to a standalone API repo (repo-root/) without
+    # re-running install.sh -- nginx keeps serving the OLD path, returns a
+    # clean filesystem 404 for every photo, and nothing in the app logs it,
+    # because Node's own /uploads static middleware never even sees the
+    # request: nginx already answered. A working alias here is not optional
+    # wiring, it is the only thing standing between an uploaded photo and
+    # every product page actually showing it.
+    location /uploads/ {
+        alias {{UPLOADS_DIR}}/;
+        access_log off;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        # Never execute anything that lands in an upload directory.
+        location ~ \.(php|js|mjs|cjs|sh|py|pl|rb)$ { deny all; }
+        try_files $uri =404;
+    }
+
+    # -----------------------------------------------------------------------
     # Everything else on the API
     # -----------------------------------------------------------------------
     location / {
