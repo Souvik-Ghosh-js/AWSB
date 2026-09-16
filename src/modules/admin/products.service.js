@@ -82,6 +82,29 @@ export async function listProducts({
     params
   );
 
+  // Attach each product's sizes. The admin list renders a pill per enabled
+  // size on every row, read from `variants[]`; without this array every
+  // product showed "No sizes enabled" no matter how it was configured. One
+  // grouped query for the page, not one per product.
+  if (rows.length > 0) {
+    const ids = rows.map((r) => r.id);
+    const [variants] = await pool.query(
+      `SELECT id, product_id, size_ml, sku, price_paise, compare_at_paise, stock_qty,
+              low_stock_threshold, is_enabled, weight_grams
+         FROM product_variants
+        WHERE product_id IN (?)
+        ORDER BY product_id ASC, size_ml ASC`,
+      [ids]
+    );
+    const byProduct = new Map();
+    for (const v of variants) {
+      const key = String(v.product_id);
+      if (!byProduct.has(key)) byProduct.set(key, []);
+      byProduct.get(key).push(v);
+    }
+    for (const r of rows) r.variants = byProduct.get(String(r.id)) ?? [];
+  }
+
   return { data: rows, page: Number(page) || 1, per_page: limit, total: Number(total) };
 }
 
