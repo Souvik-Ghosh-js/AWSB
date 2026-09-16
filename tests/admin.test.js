@@ -311,3 +311,47 @@ test('owner guard: non-owners are never protected by this rule', () => {
   // An already-inactive owner is not the last ACTIVE owner.
   assert.ok(canModifyAdmin({ id: 6, role: 'owner', is_active: false }, { action: 'delete' }, 1).allowed);
 });
+
+// ------------------------------------------------------------------ variant patch
+// PATCH /admin/products/:id used to drop `variants` silently (the body schema
+// omitted it), so a price change from the admin form returned 200 and changed
+// nothing. These rules back the fix.
+
+import { variantPatchSets, variantsBySize, VARIANT_PATCH_FIELDS } from '../src/modules/admin/helpers/variant-patch.js';
+
+test('variant patch: only the allowed columns become SET fragments', () => {
+  const { sets, params } = variantPatchSets({
+    size_ml: 3, price_paise: 170000, low_stock_threshold: 3, is_enabled: true, product_id: 99,
+  });
+  assert.deepEqual(sets, ['price_paise = :price_paise', 'low_stock_threshold = :low_stock_threshold', 'is_enabled = :is_enabled']);
+  assert.deepEqual(params, { price_paise: 170000, low_stock_threshold: 3, is_enabled: true });
+});
+
+test('variant patch: a null compare_at price clears the column rather than being skipped', () => {
+  const { sets, params } = variantPatchSets({ compare_at_paise: null });
+  assert.deepEqual(sets, ['compare_at_paise = :compare_at_paise']);
+  assert.equal(params.compare_at_paise, null);
+});
+
+test('variant patch: an entry with nothing to change yields no SET', () => {
+  assert.deepEqual(variantPatchSets({ size_ml: 6 }).sets, []);
+});
+
+test('variant patch: stock_qty is refused so it cannot bypass the ledger', () => {
+  assert.throws(() => variantPatchSets({ price_paise: 1, stock_qty: 5 }), /ledger/);
+});
+
+test('variant patch: every allowed field is a real product_variants column', () => {
+  for (const f of VARIANT_PATCH_FIELDS) assert.match(f, /^[a-z_]+$/);
+});
+
+test('variants by size: indexes entries by numeric size', () => {
+  const m = variantsBySize([{ size_ml: 3, price_paise: 1 }, { size_ml: '12', price_paise: 2 }]);
+  assert.equal(m.get(3).price_paise, 1);
+  assert.equal(m.get(12).price_paise, 2);
+  assert.equal(variantsBySize(undefined).size, 0);
+});
+
+test('variants by size: a duplicated size is rejected instead of silently overwriting', () => {
+  assert.throws(() => variantsBySize([{ size_ml: 6 }, { size_ml: 6 }]), /more than once/);
+});

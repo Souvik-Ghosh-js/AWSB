@@ -58,7 +58,12 @@ const createBody = z.object({
   variants: z.array(variantInput).max(3).optional(),
 });
 
-const updateBody = createBody.partial().omit({ variants: true });
+// On update, per-size price/threshold/enabled flags may be sent alongside the
+// product fields, matched to the existing variant by size_ml. Stock is NOT
+// accepted here: it changes only through the inventory ledger.
+const updateBody = createBody.partial().extend({
+  variants: z.array(variantInput.omit({ stock_qty: true }).strict()).max(3).optional(),
+});
 
 router.get(
   '/products',

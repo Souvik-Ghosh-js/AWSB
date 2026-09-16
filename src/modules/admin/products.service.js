@@ -2,6 +2,7 @@ import { pool, withTransaction } from '../../db/pool.js';
 import { ApiError } from '../../middleware/error.js';
 import { uploadFile } from '../../services/storage/index.js';
 import { generateSku, dedupeSku, slugify, VARIANT_SIZES_ML } from './helpers/sku.js';
+import { variantPatchSets, variantsBySize } from './helpers/variant-patch.js';
 
 // Products, their 3ml/6ml/12ml variants, and their images.
 //
@@ -229,6 +230,14 @@ const UPDATABLE = [
   'is_featured', 'sort_order', 'meta_title', 'meta_description',
 ];
 
+/**
+ * Update product fields and, optionally, its variants.
+ *
+ * `input.variants` entries are matched to the existing row by size_ml and only
+ * the fields present are changed. Sizes not mentioned are left untouched. A
+ * size with no row yet (older products) is created disabled with a generated
+ * SKU. Stock is never touched here — it goes through the ledger.
+ */
 export async function updateProduct(id, input) {
   const sets = [];
   const params = { id };
@@ -248,13 +257,73 @@ export async function updateProduct(id, input) {
     params.slug = slugify(input.slug);
   }
 
-  if (sets.length === 0) return getProduct(id);
+  const bySize = variantsBySize(input.variants);
+  if (sets.length === 0 && bySize.size === 0) return getProduct(id);
 
-  const [result] = await pool.execute(
-    `UPDATE products SET ${sets.join(', ')} WHERE id = :id AND deleted_at IS NULL`,
-    params
-  );
-  if (result.affectedRows === 0) throw new ApiError(404, 'Product not found.');
+  await withTransaction(async (conn) => {
+    if (sets.length > 0) {
+      const [result] = await conn.execute(
+        `UPDATE products SET ${sets.join(', ')} WHERE id = :id AND deleted_at IS NULL`,
+        params
+      );
+      if (result.affectedRows === 0) throw new ApiError(404, 'Product not found.');
+    }
+    if (bySize.size === 0) return;
+
+    const [productRows] = await conn.execute(
+      'SELECT id, name FROM products WHERE id = :id AND deleted_at IS NULL LIMIT 1',
+      { id }
+    );
+    if (!productRows[0]) throw new ApiError(404, 'Product not found.');
+
+    const [existing] = await conn.execute(
+      'SELECT id, size_ml FROM product_variants WHERE product_id = :id FOR UPDATE',
+      { id }
+    );
+    const rowBySize = new Map(existing.map((r) => [Number(r.size_ml), r]));
+
+    for (const [sizeMl, v] of bySize) {
+      if (!VARIANT_SIZES_ML.includes(sizeMl)) {
+        throw new ApiError(400, `Unsupported variant size ${sizeMl}ml.`);
+      }
+      let patch;
+      try {
+        patch = variantPatchSets(v);
+      } catch (e) {
+        throw new ApiError(e.status ?? 400, e.message);
+      }
+
+      const row = rowBySize.get(sizeMl);
+      if (row) {
+        if (patch.sets.length === 0) continue;
+        await conn.execute(
+          `UPDATE product_variants SET ${patch.sets.join(', ')} WHERE id = :variant_id`,
+          { ...patch.params, variant_id: row.id }
+        );
+      } else {
+        const used = await takenSkus(conn);
+        const sku = dedupeSku(v.sku ?? generateSku(productRows[0].name, sizeMl), used);
+        await conn.execute(
+          `INSERT INTO product_variants
+             (product_id, size_ml, sku, price_paise, compare_at_paise, stock_qty,
+              low_stock_threshold, is_enabled, weight_grams)
+           VALUES
+             (:product_id, :size_ml, :sku, :price_paise, :compare_at_paise, 0,
+              :low_stock_threshold, :is_enabled, :weight_grams)`,
+          {
+            product_id: id,
+            size_ml: sizeMl,
+            sku,
+            price_paise: v.price_paise ?? 0,
+            compare_at_paise: v.compare_at_paise ?? null,
+            low_stock_threshold: v.low_stock_threshold ?? 5,
+            is_enabled: v.is_enabled ?? false,
+            weight_grams: v.weight_grams ?? null,
+          }
+        );
+      }
+    }
+  });
 
   return getProduct(id);
 }
