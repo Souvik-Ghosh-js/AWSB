@@ -143,7 +143,7 @@ export async function getProductBySlug(slug, conn = pool) {
   const product = rows[0];
   if (!product) return null;
 
-  const [variants, images, reviews, ratings] = await Promise.all([
+  const [variants, images, reviews, ratings, categories] = await Promise.all([
     conn.query(
       `SELECT id, size_ml, sku, price_paise, compare_at_paise, stock_qty,
               low_stock_threshold
@@ -173,6 +173,14 @@ export async function getProductBySlug(slug, conn = pool) {
         WHERE product_id = :id AND status = 'approved'`,
       { id: product.id }
     ),
+    conn.query(
+      `SELECT c.id, c.slug, c.name
+         FROM product_categories pc
+         JOIN categories c ON c.id = pc.category_id
+        WHERE pc.product_id = :id
+        ORDER BY c.sort_order ASC, c.name ASC`,
+      { id: product.id }
+    ),
   ]);
 
   return {
@@ -198,6 +206,7 @@ export async function getProductBySlug(slug, conn = pool) {
     })),
     ...normaliseRating(ratings[0][0]?.rating_avg, ratings[0][0]?.rating_count),
     reviews: reviews[0].map(shapeReview),
+    categories: categories[0].map((c) => ({ id: Number(c.id), slug: c.slug, name: c.name })),
   };
 }
 

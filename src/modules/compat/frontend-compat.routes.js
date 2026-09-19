@@ -401,21 +401,6 @@ router.get(
   })
 );
 
-/** GET /admin/categories — the category picker in the product editor. */
-router.get(
-  '/admin/categories',
-  requireAdmin('staff'),
-  asyncHandler(async (req, res) => {
-    const [rows] = await pool.query(
-      `SELECT c.id, c.slug, c.name, c.description, c.sort_order,
-              (SELECT COUNT(*) FROM product_categories pc WHERE pc.category_id = c.id) AS product_count
-         FROM categories c
-        ORDER BY c.sort_order, c.name`
-    );
-    res.json({ items: rows });
-  })
-);
-
 /**
  * PATCH /admin/settings/:key — update one setting.
  * The settings router only exposes a whole-object PUT; the admin UI edits

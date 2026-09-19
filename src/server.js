@@ -18,7 +18,7 @@ const optional = [
   ['/api/v1/auth', './modules/auth/auth.routes.js', 'authRouter'],
   ['/api/v1', './modules/auth/me.routes.js', 'meRouter'],
   // Endpoints the storefront calls that the original contract omitted:
-  // GET /shipping/quote, /shipping/pincode, /admin/auth/me, /admin/categories,
+  // GET /shipping/quote, /shipping/pincode, /admin/auth/me,
   // PATCH /admin/settings/:key. Declares its own full sub-paths.
   ['/api/v1', './modules/compat/frontend-compat.routes.js', 'compatRouter'],
   // Admin routers declare their OWN full sub-paths ('/products', '/coupons',
@@ -26,6 +26,7 @@ const optional = [
   // same base. Mounting them at '/api/v1/admin/products' etc. would produce
   // '/api/v1/admin/products/products' and 404 the entire admin panel.
   ['/api/v1/admin', './modules/admin/products.routes.js', 'adminProductsRouter'],
+  ['/api/v1/admin', './modules/admin/categories.routes.js', 'adminCategoriesRouter'],
   ['/api/v1/admin', './modules/admin/inventory.routes.js', 'adminInventoryRouter'],
   ['/api/v1/admin', './modules/admin/coupons.routes.js', 'adminCouponsRouter'],
   ['/api/v1/admin', './modules/admin/couriers.routes.js', 'adminCouriersRouter'],

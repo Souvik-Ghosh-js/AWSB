@@ -56,6 +56,10 @@ const createBody = z.object({
   // Per-size price and stock. Independent by design: a 3ml tester and a 12ml
   // bottle have unrelated prices and unrelated stock levels.
   variants: z.array(variantInput).max(3).optional(),
+  // Which categories (Attars, Powders, Bakhoor, Incense, ...) this product
+  // belongs to. Omitted entirely = leave assignments unchanged on update, or
+  // uncategorised on create. An empty array clears all assignments.
+  category_ids: z.array(z.number().int().positive()).optional(),
 });
 
 // On update, per-size price/threshold/enabled flags may be sent alongside the

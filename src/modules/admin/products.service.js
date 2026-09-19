@@ -3,6 +3,7 @@ import { ApiError } from '../../middleware/error.js';
 import { uploadFile } from '../../services/storage/index.js';
 import { generateSku, dedupeSku, slugify, VARIANT_SIZES_ML } from './helpers/sku.js';
 import { variantPatchSets, variantsBySize } from './helpers/variant-patch.js';
+import { setProductCategories, getProductCategories } from './categories.service.js';
 
 // Products, their 3ml/6ml/12ml variants, and their images.
 //
@@ -132,7 +133,9 @@ export async function getProduct(id, { includeDeleted = true } = {}) {
     { id }
   );
 
-  return { ...product, variants, images };
+  const categories = await getProductCategories(pool, id);
+
+  return { ...product, variants, images, categories };
 }
 
 /**
@@ -221,6 +224,10 @@ export async function createProduct(input) {
       }
     }
 
+    if (input.category_ids !== undefined) {
+      await setProductCategories(conn, productId, input.category_ids);
+    }
+
     return productId;
   }).then((id) => getProduct(id));
 }
@@ -258,7 +265,8 @@ export async function updateProduct(id, input) {
   }
 
   const bySize = variantsBySize(input.variants);
-  if (sets.length === 0 && bySize.size === 0) return getProduct(id);
+  const hasCategoryChange = input.category_ids !== undefined;
+  if (sets.length === 0 && bySize.size === 0 && !hasCategoryChange) return getProduct(id);
 
   await withTransaction(async (conn) => {
     if (sets.length > 0) {
@@ -268,6 +276,16 @@ export async function updateProduct(id, input) {
       );
       if (result.affectedRows === 0) throw new ApiError(404, 'Product not found.');
     }
+
+    if (hasCategoryChange) {
+      const [productRows] = await conn.execute(
+        'SELECT id FROM products WHERE id = :id AND deleted_at IS NULL LIMIT 1',
+        { id }
+      );
+      if (!productRows[0]) throw new ApiError(404, 'Product not found.');
+      await setProductCategories(conn, id, input.category_ids);
+    }
+
     if (bySize.size === 0) return;
 
     const [productRows] = await conn.execute(
