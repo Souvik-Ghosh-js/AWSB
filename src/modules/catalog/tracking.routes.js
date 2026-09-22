@@ -7,19 +7,22 @@ import { validate } from '../../middleware/validate.js';
 import {
   normaliseEmail,
   normaliseOrderNumber,
+  normalisePhone,
   resolveTrackingUrl,
   isTrackingLookupComplete,
 } from './catalog.pure.js';
 
 const router = Router();
 
-// BOTH fields are required, and zod enforces it before the handler runs.
-// Order numbers are sequential ('AWSB-2026-00417') and therefore trivially
-// guessable: without the matching ship_email, anyone could enumerate orders and
-// read another customer's name, address and phone number.
+// The order number is always required, plus at least one matching contact
+// detail. Order numbers are sequential ('AWSB-2026-00417') and therefore
+// trivially guessable: without a matching ship_email OR ship_phone, anyone
+// could enumerate orders and read another customer's name, address and
+// phone number. Either contact detail is an equally strong guard.
 const trackQuery = z.object({
   order_number: z.string().trim().min(1).max(20),
-  email: z.string().trim().email().max(255),
+  email: z.string().trim().email().max(255).optional(),
+  phone: z.string().trim().min(1).max(20).optional(),
 });
 
 router.get(
@@ -32,12 +35,28 @@ router.get(
       throw new ApiError(
         400,
         'TRACKING_LOOKUP_INCOMPLETE',
-        'Enter both your order number and the email address used on the order.'
+        'Enter your order number and either the email address or the phone number used on the order.'
       );
     }
 
     const orderNumber = normaliseOrderNumber(req.query.order_number);
-    const email = normaliseEmail(req.query.email);
+    const email = req.query.email ? normaliseEmail(req.query.email) : null;
+    const phone = req.query.phone ? normalisePhone(req.query.phone) : null;
+
+    const where = ['o.order_number = :orderNumber'];
+    const params = { orderNumber };
+    // Matched with OR: whichever contact detail the customer supplies is a
+    // sufficient, independent guard — see isTrackingLookupComplete's comment.
+    const contactClauses = [];
+    if (email) {
+      contactClauses.push('LOWER(o.ship_email) = :email');
+      params.email = email;
+    }
+    if (phone) {
+      contactClauses.push('o.ship_phone = :phone');
+      params.phone = phone;
+    }
+    where.push(`(${contactClauses.join(' OR ')})`);
 
     const [orders] = await pool.query(
       `SELECT o.id, o.order_number, o.status, o.payment_status,
@@ -45,20 +64,19 @@ router.get(
               o.ship_full_name, o.ship_city, o.ship_state, o.ship_pincode,
               o.placed_at, o.shipped_at, o.delivered_at, o.created_at
          FROM orders o
-        WHERE o.order_number = :orderNumber
-          AND LOWER(o.ship_email) = :email
+        WHERE ${where.join(' AND ')}
         LIMIT 1`,
-      { orderNumber, email }
+      params
     );
 
     const order = orders[0];
     if (!order) {
-      // One message whether the order does not exist or the email does not
-      // match — anything more specific confirms which order numbers are real.
+      // One message regardless of which part didn't match — anything more
+      // specific confirms which order numbers are real.
       throw new ApiError(
         404,
         'ORDER_NOT_FOUND',
-        'We could not find an order with that number and email address.'
+        'We could not find an order with that number and contact detail.'
       );
     }
 

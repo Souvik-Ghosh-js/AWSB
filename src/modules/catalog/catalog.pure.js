@@ -112,15 +112,17 @@ export function normaliseRating(avg, count) {
 }
 
 /**
- * Guest order tracking must be gated on BOTH the order number and the email
- * the parcel is going to. order_number alone is guessable — they are sequential
- * ('AWSB-2026-00417') — so requiring the matching ship_email is what stops one
- * customer from reading another's address and phone number.
+ * Guest order tracking must be gated on the order number PLUS at least one
+ * matching contact detail (email or phone). order_number alone is guessable
+ * — they are sequential ('AWSB-2026-00417') — so requiring a match on
+ * ship_email or ship_phone is what stops one customer from reading another's
+ * address and phone number. Either contact detail is an equally strong
+ * guard; the customer just picks whichever they remember from checkout.
  *
  * Pure so the guard itself is unit-testable without a DB.
  */
-export function isTrackingLookupComplete({ order_number, email } = {}) {
-  return isNonEmptyString(order_number) && isNonEmptyString(email);
+export function isTrackingLookupComplete({ order_number, email, phone } = {}) {
+  return isNonEmptyString(order_number) && (isNonEmptyString(email) || isNonEmptyString(phone));
 }
 
 function isNonEmptyString(v) {
@@ -135,6 +137,19 @@ export function normaliseEmail(email) {
 /** Order numbers are stored uppercase ('AWSB-2026-00417'). */
 export function normaliseOrderNumber(orderNumber) {
   return String(orderNumber ?? '').trim().toUpperCase();
+}
+
+/**
+ * Phones are stored as the bare 10-digit number (see phoneSchema in
+ * middleware/validate.js), but a customer typing it back in at tracking time
+ * may include a +91, spaces or dashes. Strip the same way checkout does so
+ * the two sides of the comparison are guaranteed to line up.
+ */
+export function normalisePhone(phone) {
+  return String(phone ?? '')
+    .trim()
+    .replace(/[\s\-()]/g, '')
+    .replace(/^(\+?91)/, '');
 }
 
 /**

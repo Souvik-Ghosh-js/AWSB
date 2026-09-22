@@ -17,6 +17,7 @@ import {
   isTrackingLookupComplete,
   normaliseEmail,
   normaliseOrderNumber,
+  normalisePhone,
   resolveTrackingUrl,
   SORT_KEYS,
   MAX_LIMIT,
@@ -229,13 +230,18 @@ test('sort: non-string input falls back', () => {
 
 // ---------------------------------------------------------------- guest tracking guard
 
-test('tracking: the lookup requires BOTH order number and email', () => {
+test('tracking: the lookup requires the order number PLUS email or phone', () => {
   assert.ok(isTrackingLookupComplete({ order_number: 'AWSB-2026-00417', email: 'a@b.com' }));
+  assert.ok(isTrackingLookupComplete({ order_number: 'AWSB-2026-00417', phone: '9800000000' }));
+  assert.ok(
+    isTrackingLookupComplete({ order_number: 'AWSB-2026-00417', email: 'a@b.com', phone: '9800000000' })
+  );
 
   // Order numbers are sequential and guessable; the number alone must never
-  // be enough to read someone else's order.
+  // be enough to read someone else's order — some contact detail is required.
   assert.ok(!isTrackingLookupComplete({ order_number: 'AWSB-2026-00417' }));
   assert.ok(!isTrackingLookupComplete({ email: 'a@b.com' }));
+  assert.ok(!isTrackingLookupComplete({ phone: '9800000000' }));
   assert.ok(!isTrackingLookupComplete({}));
   assert.ok(!isTrackingLookupComplete());
 });
@@ -243,9 +249,11 @@ test('tracking: the lookup requires BOTH order number and email', () => {
 test('tracking: blank and whitespace-only values do not satisfy the guard', () => {
   assert.ok(!isTrackingLookupComplete({ order_number: '', email: 'a@b.com' }));
   assert.ok(!isTrackingLookupComplete({ order_number: '   ', email: 'a@b.com' }));
-  assert.ok(!isTrackingLookupComplete({ order_number: 'AWSB-2026-00417', email: '' }));
-  assert.ok(!isTrackingLookupComplete({ order_number: 'AWSB-2026-00417', email: '  ' }));
-  assert.ok(!isTrackingLookupComplete({ order_number: null, email: null }));
+  assert.ok(!isTrackingLookupComplete({ order_number: 'AWSB-2026-00417', email: '', phone: '' }));
+  assert.ok(!isTrackingLookupComplete({ order_number: 'AWSB-2026-00417', email: '  ', phone: '   ' }));
+  assert.ok(!isTrackingLookupComplete({ order_number: null, email: null, phone: null }));
+  // One blank contact field is fine as long as the other is present.
+  assert.ok(isTrackingLookupComplete({ order_number: 'AWSB-2026-00417', email: '', phone: '9800000000' }));
 });
 
 test('tracking: identifiers are normalised before comparison', () => {
@@ -253,6 +261,14 @@ test('tracking: identifiers are normalised before comparison', () => {
   assert.equal(normaliseOrderNumber(' awsb-2026-00417 '), 'AWSB-2026-00417');
   assert.equal(normaliseEmail(null), '');
   assert.equal(normaliseOrderNumber(undefined), '');
+});
+
+test('tracking: phone is normalised the same way checkout stores it', () => {
+  assert.equal(normalisePhone('+91 98000-12345'), '9800012345');
+  assert.equal(normalisePhone('9198000 12345'), '9800012345');
+  assert.equal(normalisePhone(' 9800012345 '), '9800012345');
+  assert.equal(normalisePhone(null), '');
+  assert.equal(normalisePhone(undefined), '');
 });
 
 test('tracking: snapshotted URL wins, template fills in otherwise', () => {
