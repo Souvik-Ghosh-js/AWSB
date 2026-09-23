@@ -228,6 +228,56 @@ export async function cancelOrder({ orderId, reason, adminId }) {
   return { orderNumber: result.order.order_number, status: 'cancelled', refund };
 }
 
+/**
+ * Permanently delete an order and everything that references it.
+ *
+ * Only allowed for 'pending_payment' (abandoned/test checkouts that never
+ * took a payment) or 'cancelled' orders (already refunded via cancelOrder,
+ * if there was anything to refund) — anything else means real money moved
+ * and this row is the only record on our side that it happened. This is
+ * NOT a soft delete: the row, its items, payments, refunds and shipments
+ * are gone for good. What survives is a snapshot in audit_log, whose
+ * entity_id is a plain column, not a foreign key, specifically so a
+ * record of the deletion outlives the thing it describes.
+ */
+export async function deleteOrder(orderId, adminId) {
+  return withTransaction(async (conn) => {
+    const [[order]] = await conn.query('SELECT * FROM orders WHERE id = ? FOR UPDATE', [orderId]);
+    if (!order) throw ApiError.notFound('Order not found.');
+
+    if (!['pending_payment', 'cancelled'].includes(order.status)) {
+      throw ApiError.conflict(
+        `Only orders that are pending payment or cancelled can be deleted. This order is ${order.status.replace('_', ' ')} — cancel it first if it needs to go.`,
+        'ORDER_NOT_DELETABLE'
+      );
+    }
+
+    const [items] = await conn.query('SELECT * FROM order_items WHERE order_id = ?', [orderId]);
+    const [payments] = await conn.query('SELECT * FROM payments WHERE order_id = ?', [orderId]);
+    const [refunds] = await conn.query('SELECT * FROM refunds WHERE order_id = ?', [orderId]);
+
+    // payments/refunds are ON DELETE RESTRICT, unlike order_items/shipments/
+    // coupon_redemptions (ON DELETE CASCADE) — deleted explicitly so a
+    // captured-but-somehow-still-present payment row blocks the delete with
+    // a real FK error rather than silently vanishing. A pending_payment or
+    // properly cancelled order should have no captured payment left, but the
+    // constraint stays as the last line of defence, not just this status check.
+    await conn.query('DELETE FROM refunds WHERE order_id = ?', [orderId]);
+    await conn.query('DELETE FROM payments WHERE order_id = ?', [orderId]);
+
+    await audit(conn, adminId, 'order.deleted', orderId, {
+      order,
+      items,
+      payments,
+      refunds,
+    }, null);
+
+    await conn.query('DELETE FROM orders WHERE id = ?', [orderId]);
+
+    return { orderNumber: order.order_number, deleted: true };
+  });
+}
+
 async function audit(conn, actorId, action, entityId, before, after) {
   await conn.query(
     `INSERT INTO audit_log (actor_id, action, entity_type, entity_id, before_json, after_json)

@@ -4,7 +4,7 @@ import { asyncHandler } from '../../middleware/error.js';
 import { validate, idParamSchema, paginationSchema } from '../../middleware/validate.js';
 import { requireAdmin } from '../../middleware/auth.js';
 import {
-  listOrders, getOrderDetail, markPacked, shipOrder, markDelivered, cancelOrder,
+  listOrders, getOrderDetail, markPacked, shipOrder, markDelivered, cancelOrder, deleteOrder,
 } from './orders.service.js';
 
 export const adminOrdersRouter = express.Router();
@@ -96,5 +96,17 @@ adminOrdersRouter.post(
         adminId: req.admin.id,
       })
     );
+  })
+);
+
+// Permanent, irreversible delete — owner only, stricter than cancel's
+// manager gate. Only pending_payment or cancelled orders qualify; see
+// deleteOrder's own guard for why.
+adminOrdersRouter.delete(
+  '/:id',
+  requireAdmin('owner'),
+  validate({ params: idParamSchema }),
+  asyncHandler(async (req, res) => {
+    res.json(await deleteOrder(req.params.id, req.admin.id));
   })
 );
