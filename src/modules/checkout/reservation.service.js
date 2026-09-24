@@ -1,5 +1,6 @@
 import { withTransaction } from '../../db/pool.js';
 import { ApiError } from '../../middleware/error.js';
+import { formatVariantSize } from '../catalog/catalog.pure.js';
 
 // Stock is reserved when the Razorpay order is CREATED, not when payment
 // succeeds. Otherwise two buyers can both pay for the last 3ml bottle and one
@@ -24,7 +25,7 @@ export async function reserveStock(conn, lines, orderId = null) {
   if (ids.length === 0) throw ApiError.badRequest('Your cart is empty.', 'EMPTY_CART');
 
   const [locked] = await conn.query(
-    `SELECT v.id, v.sku, v.size_ml, v.stock_qty, v.is_enabled, v.price_paise,
+    `SELECT v.id, v.sku, v.size_ml, v.size_unit, v.stock_qty, v.is_enabled, v.price_paise,
             p.name AS product_name, p.status AS product_status
        FROM product_variants v
        JOIN products p ON p.id = v.product_id
@@ -45,11 +46,12 @@ export async function reserveStock(conn, lines, orderId = null) {
       problems.push({ variantId: line.variantId, issue: 'not_found', message: 'This item is no longer available.' });
       continue;
     }
+    const sizeLabel = formatVariantSize(v.size_ml, v.size_unit);
     if (!v.is_enabled || v.product_status !== 'active') {
       problems.push({
         variantId: line.variantId,
         issue: 'unavailable',
-        message: `${v.product_name} ${v.size_ml}ml is not available right now.`,
+        message: `${v.product_name} ${sizeLabel} is not available right now.`,
       });
       continue;
     }
@@ -60,8 +62,8 @@ export async function reserveStock(conn, lines, orderId = null) {
         available: Number(v.stock_qty),
         message:
           v.stock_qty === 0
-            ? `${v.product_name} ${v.size_ml}ml has just sold out.`
-            : `Only ${v.stock_qty} left of ${v.product_name} ${v.size_ml}ml.`,
+            ? `${v.product_name} ${sizeLabel} has just sold out.`
+            : `Only ${v.stock_qty} left of ${v.product_name} ${sizeLabel}.`,
       });
     }
   }

@@ -118,7 +118,7 @@ export async function streamSalesCsv({ from, to }, writable) {
            o.ship_pincode, o.ship_zone, o.subtotal_paise, o.discount_paise,
            o.coupon_code, o.shipping_paise, o.total_paise, o.currency,
            (SELECT GROUP_CONCAT(
-                     CONCAT(oi.product_name, ' ', oi.size_ml, 'ml x', oi.quantity)
+                     CONCAT(oi.product_name, ' ', oi.size_ml, oi.size_unit, ' x', oi.quantity)
                      ORDER BY oi.id SEPARATOR '; ')
               FROM order_items oi WHERE oi.order_id = o.id) AS items_summary
       FROM orders o

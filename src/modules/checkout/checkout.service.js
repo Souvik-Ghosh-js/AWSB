@@ -88,6 +88,7 @@ export async function createCheckoutSession({ items, address, couponCode, custom
         variantId: Number(v.id),
         productName: v.product_name,
         sizeMl: Number(v.size_ml),
+        sizeUnit: v.size_unit ?? 'ml',
         sku: v.sku,
         unitPricePaise: unit,
         quantity: qty,
@@ -136,9 +137,9 @@ export async function createCheckoutSession({ items, address, couponCode, custom
     for (const l of lines) {
       await conn.query(
         `INSERT INTO order_items
-           (order_id, variant_id, product_name, size_ml, sku, unit_price_paise, quantity, line_total_paise)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [orderId, l.variantId, l.productName, l.sizeMl, l.sku, l.unitPricePaise, l.quantity, l.lineTotalPaise]
+           (order_id, variant_id, product_name, size_ml, size_unit, sku, unit_price_paise, quantity, line_total_paise)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [orderId, l.variantId, l.productName, l.sizeMl, l.sizeUnit, l.sku, l.unitPricePaise, l.quantity, l.lineTotalPaise]
       );
     }
 

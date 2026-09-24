@@ -31,8 +31,13 @@ const scentNotes = z.object({
   base: z.array(z.string()).optional(),
 });
 
+// size_ml used to be locked to a 3-value literal union — it was never really
+// "always 3, 6 or 12", that was just every product being ml so far. Powders,
+// bakhoor and dhoopbatti are sold by the gram or by stick-count, so size_ml
+// is now any positive size, and size_unit says what it's a size of.
 const variantInput = z.object({
-  size_ml: z.union([z.literal(3), z.literal(6), z.literal(12)]),
+  size_ml: z.number().int().positive(),
+  size_unit: z.enum(['ml', 'g', 'sticks']).optional(),
   price_paise: z.number().int().nonnegative().optional(),
   compare_at_paise: z.number().int().positive().nullable().optional(),
   stock_qty: z.number().int().nonnegative().optional(),

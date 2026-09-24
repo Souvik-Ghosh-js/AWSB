@@ -8,6 +8,16 @@ export const VARIANT_PATCH_FIELDS = [
 ];
 
 /**
+ * Sizes are unit-qualified — a "12" only means the same variant slot if both
+ * the number AND the unit match. A product's variants are always all one
+ * unit (an attar is all ml, a powder is all grams), so within one request
+ * this key just has to distinguish rows, not describe every possible mix.
+ */
+function sizeKey(sizeMl, sizeUnit) {
+  return `${Number(sizeMl)}:${sizeUnit ?? 'ml'}`;
+}
+
+/**
  * Turn a variant patch into SQL SET fragments and named params.
  *
  * `stock_qty` is refused outright: stock changes must go through the ledger
@@ -36,23 +46,23 @@ export function variantPatchSets(input) {
 }
 
 /**
- * Index a PATCH body's `variants` array by size so each entry can be matched
- * to the existing row for that size. Duplicate sizes are rejected because the
- * second would silently overwrite the first.
+ * Index a PATCH body's `variants` array by size (+ unit) so each entry can be
+ * matched to the existing row for that size. Duplicate sizes are rejected
+ * because the second would silently overwrite the first.
  *
- * @param {Array<{size_ml:number}>|undefined} variants
- * @returns {Map<number, object>}
+ * @param {Array<{size_ml:number, size_unit?:string}>|undefined} variants
+ * @returns {Map<string, object>}
  */
 export function variantsBySize(variants) {
   const map = new Map();
   for (const v of variants ?? []) {
-    const size = Number(v.size_ml);
-    if (map.has(size)) {
-      const err = new Error(`Variant size ${size}ml appears more than once in the request.`);
+    const key = sizeKey(v.size_ml, v.size_unit);
+    if (map.has(key)) {
+      const err = new Error(`Variant size ${v.size_ml}${v.size_unit ?? 'ml'} appears more than once in the request.`);
       err.status = 400;
       throw err;
     }
-    map.set(size, v);
+    map.set(key, v);
   }
   return map;
 }

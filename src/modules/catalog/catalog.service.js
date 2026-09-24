@@ -107,7 +107,7 @@ async function fetchVariants(productIds, conn) {
   // IN (?) with an array expands positionally; this query therefore uses `?`
   // rather than the named placeholders used elsewhere.
   const [rows] = await conn.query(
-    `SELECT id, product_id, size_ml, sku, price_paise, compare_at_paise,
+    `SELECT id, product_id, size_ml, size_unit, sku, price_paise, compare_at_paise,
             stock_qty, low_stock_threshold
        FROM product_variants
       WHERE product_id IN (?) AND is_enabled = TRUE
@@ -145,7 +145,7 @@ export async function getProductBySlug(slug, conn = pool) {
 
   const [variants, images, reviews, ratings, categories] = await Promise.all([
     conn.query(
-      `SELECT id, size_ml, sku, price_paise, compare_at_paise, stock_qty,
+      `SELECT id, size_ml, size_unit, sku, price_paise, compare_at_paise, stock_qty,
               low_stock_threshold
          FROM product_variants
         WHERE product_id = :id AND is_enabled = TRUE

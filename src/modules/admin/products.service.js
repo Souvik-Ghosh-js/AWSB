@@ -91,7 +91,7 @@ export async function listProducts({
   if (rows.length > 0) {
     const ids = rows.map((r) => r.id);
     const [variants] = await pool.query(
-      `SELECT id, product_id, size_ml, sku, price_paise, compare_at_paise, stock_qty,
+      `SELECT id, product_id, size_ml, size_unit, sku, price_paise, compare_at_paise, stock_qty,
               low_stock_threshold, is_enabled, weight_grams
          FROM product_variants
         WHERE product_id IN (?)
@@ -120,7 +120,7 @@ export async function getProduct(id, { includeDeleted = true } = {}) {
   if (!product) throw new ApiError(404, 'Product not found.');
 
   const [variants] = await pool.execute(
-    `SELECT id, product_id, size_ml, sku, price_paise, compare_at_paise, stock_qty,
+    `SELECT id, product_id, size_ml, size_unit, sku, price_paise, compare_at_paise, stock_qty,
             low_stock_threshold, is_enabled, weight_grams, created_at, updated_at
        FROM product_variants WHERE product_id = :id ORDER BY size_ml ASC`,
     { id }
@@ -180,21 +180,32 @@ export async function createProduct(input) {
     );
     const used = await takenSkus(conn);
 
-    for (const sizeMl of VARIANT_SIZES_ML) {
+    // Default slots are the 3/6/12ml sizes, for the common case of an attar
+    // created with nothing filled in yet. A product whose variants specify
+    // OTHER sizes (grams, sticks — anything not already a default slot) gets
+    // exactly those slots instead of also picking up three unwanted ml rows.
+    // A product's variants are always one unit (an attar is all ml, a powder
+    // is all grams), so "any override present" is enough to tell the two
+    // cases apart.
+    const slots = overrides.size > 0 ? [...overrides.keys()] : VARIANT_SIZES_ML;
+
+    for (const sizeMl of slots) {
       const v = overrides.get(sizeMl) ?? {};
+      const sizeUnit = v.size_unit ?? 'ml';
       const sku = dedupeSku(v.sku ?? generateSku(input.name, sizeMl), used);
       used.add(sku);
 
       await conn.execute(
         `INSERT INTO product_variants
-           (product_id, size_ml, sku, price_paise, compare_at_paise, stock_qty,
+           (product_id, size_ml, size_unit, sku, price_paise, compare_at_paise, stock_qty,
             low_stock_threshold, is_enabled, weight_grams)
          VALUES
-           (:product_id, :size_ml, :sku, :price_paise, :compare_at_paise, :stock_qty,
+           (:product_id, :size_ml, :size_unit, :sku, :price_paise, :compare_at_paise, :stock_qty,
             :low_stock_threshold, :is_enabled, :weight_grams)`,
         {
           product_id: productId,
           size_ml: sizeMl,
+          size_unit: sizeUnit,
           sku,
           price_paise: v.price_paise ?? 0,
           compare_at_paise: v.compare_at_paise ?? null,
@@ -295,15 +306,16 @@ export async function updateProduct(id, input) {
     if (!productRows[0]) throw new ApiError(404, 'Product not found.');
 
     const [existing] = await conn.execute(
-      'SELECT id, size_ml FROM product_variants WHERE product_id = :id FOR UPDATE',
+      'SELECT id, size_ml, size_unit FROM product_variants WHERE product_id = :id FOR UPDATE',
       { id }
     );
-    const rowBySize = new Map(existing.map((r) => [Number(r.size_ml), r]));
+    const rowBySize = new Map(
+      existing.map((r) => [`${Number(r.size_ml)}:${r.size_unit}`, r])
+    );
 
-    for (const [sizeMl, v] of bySize) {
-      if (!VARIANT_SIZES_ML.includes(sizeMl)) {
-        throw new ApiError(400, `Unsupported variant size ${sizeMl}ml.`);
-      }
+    for (const v of bySize.values()) {
+      const sizeMl = Number(v.size_ml);
+      const sizeUnit = v.size_unit ?? 'ml';
       let patch;
       try {
         patch = variantPatchSets(v);
@@ -311,7 +323,7 @@ export async function updateProduct(id, input) {
         throw new ApiError(e.status ?? 400, e.message);
       }
 
-      const row = rowBySize.get(sizeMl);
+      const row = rowBySize.get(`${sizeMl}:${sizeUnit}`);
       if (row) {
         if (patch.sets.length === 0) continue;
         await conn.execute(
@@ -323,14 +335,15 @@ export async function updateProduct(id, input) {
         const sku = dedupeSku(v.sku ?? generateSku(productRows[0].name, sizeMl), used);
         await conn.execute(
           `INSERT INTO product_variants
-             (product_id, size_ml, sku, price_paise, compare_at_paise, stock_qty,
+             (product_id, size_ml, size_unit, sku, price_paise, compare_at_paise, stock_qty,
               low_stock_threshold, is_enabled, weight_grams)
            VALUES
-             (:product_id, :size_ml, :sku, :price_paise, :compare_at_paise, 0,
+             (:product_id, :size_ml, :size_unit, :sku, :price_paise, :compare_at_paise, 0,
               :low_stock_threshold, :is_enabled, :weight_grams)`,
           {
             product_id: id,
             size_ml: sizeMl,
+            size_unit: sizeUnit,
             sku,
             price_paise: v.price_paise ?? 0,
             compare_at_paise: v.compare_at_paise ?? null,

@@ -81,7 +81,7 @@ router.get(
     }
 
     const [items] = await pool.query(
-      `SELECT product_name, size_ml, sku, unit_price_paise, quantity, line_total_paise
+      `SELECT product_name, size_ml, size_unit, sku, unit_price_paise, quantity, line_total_paise
          FROM order_items
         WHERE order_id = :orderId
         ORDER BY id ASC`,
@@ -127,6 +127,7 @@ router.get(
       items: items.map((item) => ({
         productName: item.product_name,
         sizeMl: Number(item.size_ml),
+        sizeUnit: item.size_unit ?? 'ml',
         sku: item.sku,
         unitPricePaise: Number(item.unit_price_paise),
         quantity: Number(item.quantity),

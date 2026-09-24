@@ -345,13 +345,27 @@ test('variant patch: every allowed field is a real product_variants column', () 
   for (const f of VARIANT_PATCH_FIELDS) assert.match(f, /^[a-z_]+$/);
 });
 
-test('variants by size: indexes entries by numeric size', () => {
+test('variants by size: indexes entries by size + unit', () => {
   const m = variantsBySize([{ size_ml: 3, price_paise: 1 }, { size_ml: '12', price_paise: 2 }]);
-  assert.equal(m.get(3).price_paise, 1);
-  assert.equal(m.get(12).price_paise, 2);
+  assert.equal(m.get('3:ml').price_paise, 1);
+  assert.equal(m.get('12:ml').price_paise, 2);
   assert.equal(variantsBySize(undefined).size, 0);
+});
+
+test('variants by size: the same number in two different units is not a collision', () => {
+  const m = variantsBySize([
+    { size_ml: 12, price_paise: 1 },
+    { size_ml: 12, size_unit: 'g', price_paise: 2 },
+  ]);
+  assert.equal(m.size, 2);
+  assert.equal(m.get('12:ml').price_paise, 1);
+  assert.equal(m.get('12:g').price_paise, 2);
 });
 
 test('variants by size: a duplicated size is rejected instead of silently overwriting', () => {
   assert.throws(() => variantsBySize([{ size_ml: 6 }, { size_ml: 6 }]), /more than once/);
+  assert.throws(
+    () => variantsBySize([{ size_ml: 25, size_unit: 'g' }, { size_ml: 25, size_unit: 'g' }]),
+    /more than once/
+  );
 });

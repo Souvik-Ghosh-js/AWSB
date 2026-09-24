@@ -88,11 +88,28 @@ function toPositiveInt(value, fallback) {
  * Shape a variant row for public output. `in_stock` is derived rather than
  * stored so the client never has to know the stock rules.
  */
+/**
+ * "12 ml" / "25 g" / "35 sticks" — the one place a variant's size and unit
+ * become a display string. Used in customer-facing stock/error messages and
+ * emails; the storefront has its own copy for anything rendered in React,
+ * since these are plain strings destined for JSON/plaintext, not JSX.
+ */
+export function formatVariantSize(sizeValue, sizeUnit) {
+  const n = Number(sizeValue);
+  const unit = sizeUnit ?? 'ml';
+  if (unit === 'sticks') return `${n} stick${n === 1 ? '' : 's'}`;
+  return `${n} ${unit}`;
+}
+
 export function shapeVariant(row) {
   const stockQty = Number(row.stock_qty ?? 0);
   return {
     id: Number(row.id),
     sizeMl: Number(row.size_ml),
+    // Most products are ml, and old rows (migrated with DEFAULT 'ml') have
+    // no other value — default here rather than trust every caller's SELECT
+    // to have asked for the column.
+    sizeUnit: row.size_unit ?? 'ml',
     sku: row.sku,
     pricePaise: Number(row.price_paise),
     compareAtPaise: row.compare_at_paise == null ? null : Number(row.compare_at_paise),

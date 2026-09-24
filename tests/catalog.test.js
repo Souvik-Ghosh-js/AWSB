@@ -13,6 +13,7 @@ import {
   paginate,
   buildPage,
   shapeVariant,
+  formatVariantSize,
   normaliseRating,
   isTrackingLookupComplete,
   normaliseEmail,
@@ -303,6 +304,28 @@ test('variant: in_stock is derived and raw stock is never exposed', () => {
   const none = shapeVariant({ id: '3', size_ml: 12, sku: 'C', price_paise: 80000, stock_qty: 0, low_stock_threshold: 5 });
   assert.equal(none.inStock, false);
   assert.equal(none.isLowStock, false);
+});
+
+test('variant: sizeUnit defaults to ml when the row has none (old rows, pre-migration)', () => {
+  const v = shapeVariant({ id: '1', size_ml: 3, sku: 'A', price_paise: 30000, stock_qty: 7, low_stock_threshold: 5 });
+  assert.equal(v.sizeUnit, 'ml');
+});
+
+test('variant: sizeUnit is carried through when the row has one', () => {
+  const v = shapeVariant({
+    id: '1', size_ml: 25, size_unit: 'g', sku: 'A', price_paise: 90000, stock_qty: 7, low_stock_threshold: 5,
+  });
+  assert.equal(v.sizeUnit, 'g');
+  assert.equal(v.sizeMl, 25);
+});
+
+test('formatVariantSize: ml and grams print as "N unit", sticks pluralise', () => {
+  assert.equal(formatVariantSize(12, 'ml'), '12 ml');
+  assert.equal(formatVariantSize(25, 'g'), '25 g');
+  assert.equal(formatVariantSize(1, 'sticks'), '1 stick');
+  assert.equal(formatVariantSize(35, 'sticks'), '35 sticks');
+  // No unit given at all (an old caller, or a row without size_unit) defaults to ml.
+  assert.equal(formatVariantSize(6), '6 ml');
 });
 
 test('rating: no approved reviews yields null, not zero stars', () => {

@@ -289,7 +289,7 @@ router.get(
 
     // The rows themselves, not a count — this is the field that crashed.
     const [lowStockRows] = await pool.query(
-      `SELECT v.id AS variant_id, v.sku, v.size_ml, v.stock_qty, v.low_stock_threshold,
+      `SELECT v.id AS variant_id, v.sku, v.size_ml, v.size_unit, v.stock_qty, v.low_stock_threshold,
               p.id AS product_id, p.name AS product_name, p.slug AS product_slug
          FROM product_variants v
          JOIN products p ON p.id = v.product_id
@@ -339,6 +339,7 @@ router.get(
         productName: r.product_name,
         productSlug: r.product_slug,
         sizeMl: Number(r.size_ml),
+        sizeUnit: r.size_unit ?? 'ml',
         sku: r.sku,
         stockQty: Number(r.stock_qty),
         lowStockThreshold: Number(r.low_stock_threshold),

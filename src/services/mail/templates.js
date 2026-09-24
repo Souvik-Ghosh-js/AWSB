@@ -29,9 +29,12 @@ import {
 const SHOP_NAME = 'Attar World Sonar Bangla';
 const REFUND_WORKING_DAYS = '5-7 working days';
 
-/** '3 ml' from a size_ml of 3. Sizes are 3/6/12 per the catalogue. */
-function sizeLabel(sizeMl) {
-  return `${Number(sizeMl)} ml`;
+/** '3 ml' / '25 g' / '35 sticks' — not every product is sold by the millilitre. */
+function sizeLabel(sizeMl, sizeUnit) {
+  const n = Number(sizeMl);
+  const unit = sizeUnit ?? 'ml';
+  if (unit === 'sticks') return `${n} stick${n === 1 ? '' : 's'}`;
+  return `${n} ${unit}`;
 }
 
 /** Normalise an order_items row into what itemsTable expects. */
@@ -42,7 +45,7 @@ function toDisplayItem(item) {
   );
   return {
     name: item.product_name ?? item.name ?? 'Item',
-    size: sizeLabel(item.size_ml),
+    size: sizeLabel(item.size_ml, item.size_unit),
     qty: String(qty),
     amount: formatPaise(lineTotal),
     unit: formatPaise(Number(item.unit_price_paise ?? 0)),
@@ -509,7 +512,7 @@ export function adminLowStock(variants = [], opts = {}) {
     const qtyColor = danger ? '#8C2F1E' : BRAND.ink;
     return `<tr>
       <td style="padding:10px 8px 10px 0; font-family:${SANS}; font-size:14px; color:${BRAND.ink}; border-bottom:1px solid ${BRAND.rule};">${escapeHtml(v.product_name ?? v.name ?? '-')}</td>
-      <td align="center" style="padding:10px 8px; font-family:${SANS}; font-size:14px; color:${BRAND.muted}; border-bottom:1px solid ${BRAND.rule};">${escapeHtml(sizeLabel(v.size_ml))}</td>
+      <td align="center" style="padding:10px 8px; font-family:${SANS}; font-size:14px; color:${BRAND.muted}; border-bottom:1px solid ${BRAND.rule};">${escapeHtml(sizeLabel(v.size_ml, v.size_unit))}</td>
       <td align="right" style="padding:10px 0 10px 8px; font-family:${SANS}; font-size:14px; font-weight:600; color:${qtyColor}; border-bottom:1px solid ${BRAND.rule};">${escapeHtml(String(qty))}${danger ? ' (out)' : ''}</td>
     </tr>`;
   }).join('\n');
@@ -532,7 +535,7 @@ ${rows}
     'Low stock',
     'The following variants have reached their alert threshold.',
     variants
-      .map((v) => `  ${v.product_name ?? v.name ?? '-'} (${sizeLabel(v.size_ml)}): ${Number(v.stock_qty ?? 0)} remaining`)
+      .map((v) => `  ${v.product_name ?? v.name ?? '-'} (${sizeLabel(v.size_ml, v.size_unit)}): ${Number(v.stock_qty ?? 0)} remaining`)
       .join('\n'),
     `Open inventory: ${url('admin/inventory', base)}`,
   ]);

@@ -1,6 +1,7 @@
 import { withTransaction } from '../../db/pool.js';
 import { sendMail } from '../../services/mail/mailer.js';
 import { env } from '../../config/env.js';
+import { formatVariantSize } from '../catalog/catalog.pure.js';
 
 // Fulfilment is idempotent and keyed on the order. Both the browser handler and
 // the order.paid webhook call it, and the webhook may be retried for 24 hours,
@@ -67,7 +68,7 @@ export async function fulfilOrder({ orderId, razorpayPaymentId, method = null, r
     const low = variantIds.length
       ? (
           await conn.query(
-            `SELECT v.id, v.size_ml, v.stock_qty, v.low_stock_threshold, p.name AS product_name
+            `SELECT v.id, v.size_ml, v.size_unit, v.stock_qty, v.low_stock_threshold, p.name AS product_name
                FROM product_variants v
                JOIN products p ON p.id = v.product_id
               WHERE v.id IN (?) AND v.stock_qty <= v.low_stock_threshold`,
@@ -80,7 +81,7 @@ export async function fulfilOrder({ orderId, razorpayPaymentId, method = null, r
       await conn.query(
         `INSERT INTO notifications (type, title, body, entity_type, entity_id)
          VALUES ('stock.low', 'Low stock', ?, 'variant', ?)`,
-        [`${v.product_name} ${v.size_ml}ml — ${v.stock_qty} left`, v.id]
+        [`${v.product_name} ${formatVariantSize(v.size_ml, v.size_unit)} — ${v.stock_qty} left`, v.id]
       );
     }
 

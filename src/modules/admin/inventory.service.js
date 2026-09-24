@@ -37,7 +37,7 @@ export async function adjustStock({
     // same starting quantity and the ledger records a balance that never
     // existed.
     const [rows] = await conn.execute(
-      `SELECT v.id, v.stock_qty, v.low_stock_threshold, v.sku, v.size_ml, p.name AS product_name
+      `SELECT v.id, v.stock_qty, v.low_stock_threshold, v.sku, v.size_ml, v.size_unit, p.name AS product_name
          FROM product_variants v
          JOIN products p ON p.id = v.product_id
         WHERE v.id = :id FOR UPDATE`,
@@ -94,6 +94,7 @@ export async function adjustStock({
       sku: variant.sku,
       product_name: variant.product_name,
       size_ml: variant.size_ml,
+      size_unit: variant.size_unit,
       previous_qty: current,
       delta: numericDelta,
       stock_qty: newBalance,
@@ -133,7 +134,7 @@ export async function setStock({ variantId, targetQty, reason = 'manual_adjustme
  */
 export async function listLowStock({ includeDisabled = false } = {}) {
   const [rows] = await pool.execute(
-    `SELECT v.id AS variant_id, v.sku, v.size_ml, v.stock_qty, v.low_stock_threshold,
+    `SELECT v.id AS variant_id, v.sku, v.size_ml, v.size_unit, v.stock_qty, v.low_stock_threshold,
             v.is_enabled, v.price_paise,
             p.id AS product_id, p.name AS product_name, p.slug AS product_slug, p.status AS product_status
        FROM product_variants v
@@ -178,7 +179,7 @@ export async function listMovements({ variantId, reason, page = 1, perPage = 50 
   const [rows] = await pool.execute(
     `SELECT m.id, m.variant_id, m.delta, m.reason, m.order_id, m.note, m.actor_id,
             m.balance_after, m.created_at,
-            v.sku, v.size_ml,
+            v.sku, v.size_ml, v.size_unit,
             p.name AS product_name,
             a.full_name AS actor_name, a.email AS actor_email,
             o.order_number
