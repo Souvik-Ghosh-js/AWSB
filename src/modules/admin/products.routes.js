@@ -36,7 +36,9 @@ const scentNotes = z.object({
 // bakhoor and dhoopbatti are sold by the gram or by stick-count, so size_ml
 // is now any positive size, and size_unit says what it's a size of.
 const variantInput = z.object({
-  size_ml: z.number().int().positive(),
+  // Not always a whole number — Ashtagandha Powder is sold in 12.5g packets.
+  // multipleOf 0.1 matches the DECIMAL(6,1) column exactly.
+  size_ml: z.number().positive().multipleOf(0.1),
   size_unit: z.enum(['ml', 'g', 'sticks']).optional(),
   price_paise: z.number().int().nonnegative().optional(),
   compare_at_paise: z.number().int().positive().nullable().optional(),
