@@ -155,6 +155,13 @@ router.patch(
     params: idParam,
     body: z.object({
       sku: z.string().max(64).optional(),
+      // Retargeting a variant's size/unit is rare (a typo, or a product that
+      // turns out not to be ml after all) but a real, ongoing need, not a
+      // one-off migration hack — this is the only place it can be done, since
+      // the bulk product-update endpoint matches variants BY (size, unit) and
+      // therefore can only add or update, never rename, one.
+      size_ml: z.number().positive().multipleOf(0.1).optional(),
+      size_unit: z.enum(['ml', 'g', 'sticks']).optional(),
       price_paise: z.number().int().nonnegative().optional(),
       compare_at_paise: z.number().int().positive().nullable().optional(),
       low_stock_threshold: z.number().int().nonnegative().optional(),

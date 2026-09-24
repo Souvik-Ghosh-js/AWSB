@@ -403,7 +403,10 @@ export async function updateVariant(variantId, input) {
     );
   }
 
-  const fields = ['sku', 'price_paise', 'compare_at_paise', 'low_stock_threshold', 'is_enabled', 'weight_grams'];
+  const fields = [
+    'sku', 'size_ml', 'size_unit', 'price_paise', 'compare_at_paise',
+    'low_stock_threshold', 'is_enabled', 'weight_grams',
+  ];
   const sets = [];
   const params = { id: variantId };
   for (const key of fields) {
