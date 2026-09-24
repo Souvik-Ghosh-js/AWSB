@@ -24,7 +24,7 @@ export async function validateCart(items, conn = pool) {
   // is decided from the same snapshot as the price — two queries could disagree
   // if an admin archives a product between them.
   const [rows] = await conn.query(
-    `SELECT v.id, v.size_ml, v.sku, v.price_paise, v.stock_qty, v.is_enabled,
+    `SELECT v.id, v.size_ml, v.size_unit, v.sku, v.price_paise, v.stock_qty, v.is_enabled,
             p.name AS product_name, p.slug AS product_slug,
             p.status AS product_status, p.deleted_at AS product_deleted_at
        FROM product_variants v
