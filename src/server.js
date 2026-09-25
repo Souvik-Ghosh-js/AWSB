@@ -27,6 +27,7 @@ const optional = [
   // '/api/v1/admin/products/products' and 404 the entire admin panel.
   ['/api/v1/admin', './modules/admin/products.routes.js', 'adminProductsRouter'],
   ['/api/v1/admin', './modules/admin/categories.routes.js', 'adminCategoriesRouter'],
+  ['/api/v1/admin', './modules/admin/shipping.routes.js', 'adminShippingRouter'],
   ['/api/v1/admin', './modules/admin/inventory.routes.js', 'adminInventoryRouter'],
   ['/api/v1/admin', './modules/admin/coupons.routes.js', 'adminCouponsRouter'],
   ['/api/v1/admin', './modules/admin/couriers.routes.js', 'adminCouriersRouter'],
