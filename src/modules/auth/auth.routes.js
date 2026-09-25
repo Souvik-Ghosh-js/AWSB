@@ -6,6 +6,7 @@ import { validate, emailSchema, phoneSchema } from '../../middleware/validate.js
 import {
   registerCustomer, loginCustomer, loginAdmin,
   requestPasswordReset, resetPassword,
+  requestLoginOtp, verifyLoginOtp,
 } from './auth.service.js';
 
 const router = express.Router();
@@ -76,6 +77,26 @@ router.post(
   asyncHandler(async (req, res) => {
     await resetPassword(req.body);
     res.json({ message: 'Password updated. You can sign in now.' });
+  })
+);
+
+router.post(
+  '/login/otp/request',
+  authLimiter,
+  validate({ body: z.object({ email: emailSchema }) }),
+  asyncHandler(async (req, res) => {
+    await requestLoginOtp(req.body.email);
+    // Deliberately identical whether or not the account exists.
+    res.json({ message: 'If that email is valid, a sign-in code is on its way.' });
+  })
+);
+
+router.post(
+  '/login/otp/verify',
+  authLimiter,
+  validate({ body: z.object({ email: emailSchema, code: z.string().trim().regex(/^\d{6}$/, 'Enter the 6-digit code.') }) }),
+  asyncHandler(async (req, res) => {
+    res.json(await verifyLoginOtp(req.body));
   })
 );
 

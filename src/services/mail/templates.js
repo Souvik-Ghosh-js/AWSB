@@ -439,6 +439,37 @@ export function passwordReset(customer, resetUrl, opts = {}) {
   };
 }
 
+/**
+ * Sign-in code. Six digits, not a link — the customer is expected to type it
+ * back into the page they requested it from, so there is no click-through
+ * URL to get wrong or expire mid-click.
+ */
+export function loginOtp(code, opts = {}) {
+  const base = opts.siteUrl;
+  const subject = `${code} is your ${SHOP_NAME} sign-in code`;
+
+  const bodyHtml = [
+    heading('Your sign-in code'),
+    paragraph('Enter this code to sign in and see your order history. It expires in 10 minutes.'),
+    `<p style="margin:24px 0; text-align:center;"><span style="display:inline-block; padding:14px 28px; font-family:${MONO}; font-size:32px; font-weight:700; letter-spacing:8px; color:${BRAND.ink}; background:${BRAND.rule}; border-radius:8px;">${escapeHtml(code)}</span></p>`,
+    paragraph('If you did not request this, you can safely ignore this email — no one can sign in without this code.', { muted: true }),
+  ].join('\n');
+
+  const text = textLayout([
+    'Your sign-in code',
+    `Enter this code to sign in and see your order history: ${code}`,
+    'It expires in 10 minutes.',
+    'If you did not request this, you can safely ignore this email.',
+    `Store: ${siteUrl(base)}`,
+  ]);
+
+  return {
+    subject,
+    html: layout({ title: subject, preheader: `Your code is ${code}.`, bodyHtml }),
+    text,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Internal alerts (ADMIN_ALERT_EMAIL)
 // ---------------------------------------------------------------------------

@@ -137,6 +137,103 @@ export async function resetPassword({ token, password }) {
   return { reset: true };
 }
 
+// Email OTP sign-in. No password: the code itself is the proof of the email,
+// which is enough for "see my order history" — this app never stores a card
+// or anything else worth a stronger gate. Reuses the same settings-table
+// hashed-token trick as password reset rather than a new table for six
+// short-lived rows' worth of state.
+const OTP_TTL_MINUTES = 10;
+const OTP_MAX_ATTEMPTS = 5;
+
+function otpKey(email) {
+  return `otp:${email}`;
+}
+
+function generateOtp() {
+  // crypto.randomInt is uniform, unlike Math.random() % 1_000_000.
+  return String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+}
+
+/**
+ * Always reports success whether or not sending actually happened, so this
+ * is not an account-enumeration oracle — same reasoning as password reset,
+ * except here EVERY email gets a code, because signing in should not require
+ * having registered first (guest checkouts never did).
+ */
+export async function requestLoginOtp(email) {
+  const code = generateOtp();
+  const hash = hashToken(code);
+
+  await pool.query(
+    `INSERT INTO settings (key_name, value_json)
+     VALUES (?, JSON_OBJECT(
+       'hash', ?,
+       'expires_at', DATE_FORMAT(UTC_TIMESTAMP() + INTERVAL ${OTP_TTL_MINUTES} MINUTE, '%Y-%m-%dT%H:%i:%sZ'),
+       'attempts', 0
+     ))
+     ON DUPLICATE KEY UPDATE value_json = VALUES(value_json)`,
+    [otpKey(email), hash]
+  );
+
+  await sendMail({
+    to: email,
+    template: 'loginOtp',
+    subject: `${code} is your sign-in code`,
+    data: { args: [code] },
+  });
+
+  return { sent: true };
+}
+
+export async function verifyLoginOtp({ email, code }) {
+  const key = otpKey(email);
+  const [[row]] = await pool.query('SELECT value_json FROM settings WHERE key_name = ? LIMIT 1', [key]);
+
+  const invalid = ApiError.badRequest('That code is incorrect or has expired.', 'OTP_INVALID');
+  if (!row) throw invalid;
+
+  const payload = typeof row.value_json === 'string' ? JSON.parse(row.value_json) : row.value_json;
+  if (!payload?.hash || new Date(payload.expires_at) < new Date()) {
+    await pool.query('DELETE FROM settings WHERE key_name = ?', [key]);
+    throw invalid;
+  }
+
+  if (payload.attempts >= OTP_MAX_ATTEMPTS) {
+    await pool.query('DELETE FROM settings WHERE key_name = ?', [key]);
+    throw ApiError.badRequest('Too many incorrect attempts. Request a new code.', 'OTP_LOCKED');
+  }
+
+  if (hashToken(code) !== payload.hash) {
+    await pool.query(
+      `UPDATE settings SET value_json = JSON_SET(value_json, '$.attempts', ?) WHERE key_name = ?`,
+      [payload.attempts + 1, key]
+    );
+    throw invalid;
+  }
+
+  // Single use, same as a password-reset token.
+  await pool.query('DELETE FROM settings WHERE key_name = ?', [key]);
+
+  // A code that verified means this inbox is genuinely reachable at this
+  // address, which is exactly what email_verified_at is for — set it here
+  // even for a brand-new row, since OTP itself is the verification.
+  const [[existing]] = await pool.query('SELECT id, full_name FROM customers WHERE email = ? LIMIT 1', [email]);
+
+  let customer;
+  if (existing) {
+    await pool.query('UPDATE customers SET email_verified_at = COALESCE(email_verified_at, UTC_TIMESTAMP()) WHERE id = ?', [existing.id]);
+    customer = { id: Number(existing.id), email, full_name: existing.full_name };
+  } else {
+    const [result] = await pool.query(
+      'INSERT INTO customers (email, email_verified_at) VALUES (?, UTC_TIMESTAMP())',
+      [email]
+    );
+    customer = { id: Number(result.insertId), email, full_name: null };
+  }
+
+  return { token: signCustomerToken(customer), customer };
+}
+
 export async function getMe(customerId) {
   const [[customer]] = await pool.query(
     'SELECT id, email, full_name, phone, marketing_opt_in, created_at FROM customers WHERE id = ?',
@@ -146,15 +243,24 @@ export async function getMe(customerId) {
   return customer;
 }
 
+// Matches orders linked to this account AND guest orders placed with the same
+// email before the customer ever signed in — OTP login has no registration
+// step, so "my orders" needs to include checkouts that predate the account.
 export async function listMyOrders(customerId, { page = 1, limit = 20 } = {}) {
   const offset = (page - 1) * limit;
-  const [[{ total }]] = await pool.query('SELECT COUNT(*) AS total FROM orders WHERE customer_id = ?', [customerId]);
+  const [[customer]] = await pool.query('SELECT email FROM customers WHERE id = ? LIMIT 1', [customerId]);
+  if (!customer) throw ApiError.notFound('Account not found.');
+
+  const where = 'WHERE customer_id = ? OR LOWER(ship_email) = LOWER(?)';
+  const params = [customerId, customer.email];
+
+  const [[{ total }]] = await pool.query(`SELECT COUNT(*) AS total FROM orders ${where}`, params);
   const [items] = await pool.query(
     `SELECT id, order_number, status, payment_status, total_paise,
             created_at, placed_at, shipped_at, delivered_at
-       FROM orders WHERE customer_id = ?
+       FROM orders ${where}
       ORDER BY created_at DESC LIMIT ? OFFSET ?`,
-    [customerId, limit, offset]
+    [...params, limit, offset]
   );
   return { items, page, limit, total: Number(total), totalPages: Math.ceil(Number(total) / limit) };
 }
