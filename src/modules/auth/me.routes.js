@@ -1,8 +1,9 @@
 import express from 'express';
+import { z } from 'zod';
 import { asyncHandler } from '../../middleware/error.js';
 import { validate, paginationSchema } from '../../middleware/validate.js';
 import { requireCustomer } from '../../middleware/auth.js';
-import { getMe, listMyOrders } from './auth.service.js';
+import { getMe, listMyOrders, getMyOrderDetail } from './auth.service.js';
 
 // Split out of auth.routes.js deliberately.
 //
@@ -28,6 +29,15 @@ router.get(
   validate({ query: paginationSchema }),
   asyncHandler(async (req, res) => {
     res.json(await listMyOrders(req.customer.id, req.validatedQuery));
+  })
+);
+
+router.get(
+  '/me/orders/:id',
+  requireCustomer,
+  validate({ params: z.object({ id: z.coerce.number().int().positive() }) }),
+  asyncHandler(async (req, res) => {
+    res.json(await getMyOrderDetail(req.customer.id, req.params.id));
   })
 );
 

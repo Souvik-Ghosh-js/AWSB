@@ -264,3 +264,29 @@ export async function listMyOrders(customerId, { page = 1, limit = 20 } = {}) {
   );
   return { items, page, limit, total: Number(total), totalPages: Math.ceil(Number(total) / limit) };
 }
+
+// Item-level detail for one of the customer's own orders — the list above
+// deliberately stays light, but requesting a replacement needs an
+// order_item_id to key off, which the list does not carry.
+export async function getMyOrderDetail(customerId, orderId) {
+  const [[customer]] = await pool.query('SELECT email FROM customers WHERE id = ? LIMIT 1', [customerId]);
+  if (!customer) throw ApiError.notFound('Account not found.');
+
+  const [[order]] = await pool.query(
+    `SELECT id, order_number, status, payment_status, total_paise,
+            created_at, placed_at, shipped_at, delivered_at
+       FROM orders
+      WHERE id = ? AND (customer_id = ? OR LOWER(ship_email) = LOWER(?))
+      LIMIT 1`,
+    [orderId, customerId, customer.email]
+  );
+  if (!order) throw ApiError.notFound('Order not found.');
+
+  const [items] = await pool.query(
+    `SELECT id, product_name, size_ml, size_unit, sku, unit_price_paise, quantity, line_total_paise
+       FROM order_items WHERE order_id = ?`,
+    [order.id]
+  );
+
+  return { ...order, items };
+}

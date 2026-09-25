@@ -15,6 +15,7 @@ const optional = [
   ['/api/v1', './modules/cart/cart.routes.js', 'cartRouter'],
   ['/api/v1', './modules/reviews/reviews.routes.js', 'reviewsRouter'],
   ['/api/v1', './modules/feedback/feedback.routes.js', 'feedbackRouter'],
+  ['/api/v1', './modules/replacements/replacements.routes.js', 'replacementsRouter'],
   ['/api/v1/auth', './modules/auth/auth.routes.js', 'authRouter'],
   ['/api/v1', './modules/auth/me.routes.js', 'meRouter'],
   // Endpoints the storefront calls that the original contract omitted:
@@ -38,6 +39,7 @@ const optional = [
   ['/api/v1/admin', './modules/admin/settings.routes.js', 'adminSettingsRouter'],
   ['/api/v1/admin', './modules/admin/reviews.routes.js', 'adminReviewsRouter'],
   ['/api/v1/admin', './modules/admin/feedback.routes.js', 'adminFeedbackRouter'],
+  ['/api/v1/admin', './modules/admin/replacements.routes.js', 'adminReplacementsRouter'],
 ];
 
 for (const [mountPath, modulePath, exportName] of optional) {

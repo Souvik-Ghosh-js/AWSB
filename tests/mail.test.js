@@ -18,6 +18,9 @@ import {
   adminNewOrder,
   adminLowStock,
   passwordReset,
+  replacementRequested,
+  replacementDecided,
+  adminReplacementRequested,
   resolveTrackingUrl,
 } from '../src/services/mail/templates.js';
 import { escapeHtml, siteUrl, url } from '../src/services/mail/render.js';
@@ -70,6 +73,13 @@ const ITEMS = [
   },
 ];
 
+const REPLACEMENT = {
+  requestNumber: 'RR-42',
+  orderNumber: ORDER.order_number,
+  productName: 'Waalid Shamama',
+  reason: 'The bottle arrived with a cracked cap and had leaked in transit.',
+};
+
 // Blue Dart: Tier 1, a verified working deep link.
 const DEEP_LINK_COURIER = {
   name: 'Blue Dart',
@@ -119,6 +129,10 @@ function renderAll() {
       opts
     ),
     passwordReset: passwordReset({ full_name: 'Ritwik Chatterjee' }, `${SITE}/reset?token=abc123`, opts),
+    replacementRequested: replacementRequested(REPLACEMENT, opts),
+    replacementDecidedApproved: replacementDecided({ ...REPLACEMENT, status: 'approved' }, opts),
+    replacementDecidedRejected: replacementDecided({ ...REPLACEMENT, status: 'rejected', adminNote: 'Photos show normal wear.' }, opts),
+    adminReplacementRequested: adminReplacementRequested({ ...REPLACEMENT, customerEmail: 'ritwik@example.com' }, opts),
   };
 }
 
@@ -246,6 +260,20 @@ test('a hostile customer name cannot inject markup into any template', () => {
     assert.ok(!mail.html.includes('<script>'), 'raw <script> reached the output');
     assert.ok(!mail.html.includes('<img'), 'raw <img> tag reached the output');
     assert.ok(mail.html.includes('&lt;script&gt;'), 'the name was not escaped at all');
+  }
+});
+
+test('a hostile replacement reason cannot inject markup, customer or admin side', () => {
+  const hostile = '<script>alert("xss")</script>';
+  const rendered = [
+    replacementRequested({ ...REPLACEMENT, reason: hostile }, opts),
+    replacementDecided({ ...REPLACEMENT, status: 'rejected', adminNote: hostile }, opts),
+    adminReplacementRequested({ ...REPLACEMENT, reason: hostile, customerEmail: 'ritwik@example.com' }, opts),
+  ];
+
+  for (const mail of rendered) {
+    assert.ok(!mail.html.includes('<script>'), 'raw <script> reached the output');
+    assert.ok(mail.html.includes('&lt;script&gt;'), 'the reason was not escaped at all');
   }
 });
 

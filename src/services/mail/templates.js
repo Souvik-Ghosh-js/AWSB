@@ -470,6 +470,87 @@ export function loginOtp(code, opts = {}) {
   };
 }
 
+/**
+ * Sent the moment a customer files a replacement request. Confirms it was
+ * received and tells them what still needs to happen: a separate email with
+ * photos and, importantly, a video of the unboxing from before the package
+ * was first opened — the app has nowhere to upload a video that large, so
+ * that evidence is collected by reply email rather than in-app.
+ */
+export function replacementRequested({ requestNumber, orderNumber, productName, reason }, opts = {}) {
+  const base = opts.siteUrl;
+  const subject = `We have your replacement request — ${requestNumber}`;
+
+  const bodyHtml = [
+    heading('Replacement request received'),
+    paragraph(
+      `We have logged your request <strong>${escapeHtml(requestNumber)}</strong> for ` +
+      `<strong>${escapeHtml(productName)}</strong> from order <strong>${escapeHtml(orderNumber)}</strong>.`
+    ),
+    panel(`<span style="color:${BRAND.muted};">What you told us:</span><br>${escapeHtml(reason)}`),
+    paragraph(
+      `<strong>One more thing is needed before we can review this.</strong> Reply to this email with ` +
+      `photos of the issue and a video of you unboxing the parcel, recorded from the very start — ` +
+      `before the package is first opened. Please quote <strong>${escapeHtml(requestNumber)}</strong> in your reply.`
+    ),
+    paragraph('We will write again once a decision has been made.', { muted: true }),
+  ].join('\n');
+
+  const text = textLayout([
+    'Replacement request received',
+    `We have logged your request ${requestNumber} for ${productName} from order ${orderNumber}.`,
+    `What you told us: ${reason}`,
+    `One more thing is needed before we can review this: reply to this email with photos of the issue ` +
+      `and a video of you unboxing the parcel, recorded from the very start — before the package is ` +
+      `first opened. Please quote ${requestNumber} in your reply.`,
+    'We will write again once a decision has been made.',
+    `Store: ${siteUrl(base)}`,
+  ]);
+
+  return {
+    subject,
+    html: layout({ title: subject, preheader: `Reply with photos and an unboxing video, quoting ${requestNumber}.`, bodyHtml }),
+    text,
+  };
+}
+
+/** Sent once an admin approves or rejects a replacement request. */
+export function replacementDecided({ requestNumber, orderNumber, productName, status, adminNote }, opts = {}) {
+  const base = opts.siteUrl;
+  const approved = status === 'approved';
+  const subject = `Your replacement request ${requestNumber} — ${approved ? 'approved' : 'not approved'}`;
+
+  const bodyHtml = [
+    heading(approved ? 'Your replacement was approved' : 'Update on your replacement request'),
+    paragraph(
+      `Request <strong>${escapeHtml(requestNumber)}</strong> for <strong>${escapeHtml(productName)}</strong> ` +
+      `from order <strong>${escapeHtml(orderNumber)}</strong> has been ` +
+      `${approved ? 'approved' : 'reviewed, and we are not able to offer a replacement for it'}.`
+    ),
+    adminNote ? panel(escapeHtml(adminNote)) : '',
+    approved
+      ? paragraph('We will be in touch shortly to arrange the replacement.')
+      : paragraph('If you believe this is wrong, reply to this email and we will take another look.'),
+  ].join('\n');
+
+  const text = textLayout([
+    approved ? 'Your replacement was approved' : 'Update on your replacement request',
+    `Request ${requestNumber} for ${productName} from order ${orderNumber} has been ` +
+      `${approved ? 'approved' : 'reviewed, and we are not able to offer a replacement for it'}.`,
+    adminNote ?? null,
+    approved
+      ? 'We will be in touch shortly to arrange the replacement.'
+      : 'If you believe this is wrong, reply to this email and we will take another look.',
+    `Store: ${siteUrl(base)}`,
+  ]);
+
+  return {
+    subject,
+    html: layout({ title: subject, preheader: subject, bodyHtml }),
+    text,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Internal alerts (ADMIN_ALERT_EMAIL)
 // ---------------------------------------------------------------------------
@@ -574,6 +655,47 @@ ${rows}
   return {
     subject,
     html: layout({ title: subject, preheader: `${count} variant(s) at or below threshold.`, bodyHtml }),
+    text,
+  };
+}
+
+/**
+ * New-replacement-request alert for the shop owner. The customer's own words
+ * (the reason) are echoed back here, so — same rule as adminNewOrder — every
+ * customer-supplied string is escaped even though this inbox is trusted.
+ */
+export function adminReplacementRequested({ requestNumber, orderNumber, productName, reason, customerEmail }, opts = {}) {
+  const base = opts.siteUrl;
+  const subject = `Replacement requested — ${requestNumber}`;
+  const adminUrl = url(`admin/orders`, base);
+
+  const bodyHtml = [
+    heading('Replacement requested'),
+    panel(
+      `<strong>${escapeHtml(requestNumber)}</strong> &middot; ${escapeHtml(productName)}<br>
+       <span style="color:${BRAND.muted};">Order ${escapeHtml(orderNumber)} &middot; ${escapeHtml(customerEmail ?? '')}</span>`,
+      { accent: true }
+    ),
+    `<div style="font-family:${SANS}; font-size:11px; letter-spacing:1px; text-transform:uppercase; color:${BRAND.muted}; padding-bottom:8px;">Customer's reason</div>`,
+    panel(escapeHtml(reason)),
+    paragraph('The customer has been asked to reply by email with photos and an unboxing video before this is reviewed.', { muted: true }),
+    button('Open orders', adminUrl),
+  ].join('\n');
+
+  const text = textLayout([
+    'Replacement requested',
+    textLine('Request', requestNumber),
+    textLine('Order', orderNumber),
+    textLine('Product', productName),
+    textLine('Customer', customerEmail ?? '-'),
+    `Reason:\n${reason}`,
+    'The customer has been asked to reply by email with photos and an unboxing video before this is reviewed.',
+    `Open orders: ${adminUrl}`,
+  ]);
+
+  return {
+    subject,
+    html: layout({ title: subject, preheader: `${productName} — order ${orderNumber}`, bodyHtml }),
     text,
   };
 }
