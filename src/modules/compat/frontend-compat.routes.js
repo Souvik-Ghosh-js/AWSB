@@ -318,6 +318,20 @@ router.get(
       "SELECT COUNT(*) AS n FROM feedback WHERE status = 'new'"
     );
 
+    // A shopper who reaches payment and never completes it is not "pending"
+    // for long — the sweeper (every 10 min) auto-cancels it once
+    // RESERVATION_MINUTES passes, tagging cancel_reason so it's distinguishable
+    // from a cancel the customer or an admin actually chose. That auto-cancel
+    // is the useful "someone abandoned checkout" signal, not the raw
+    // pending_payment count, which normally reflects only the last few
+    // minutes of checkouts in progress.
+    const [[abandoned]] = await pool.query(
+      `SELECT COUNT(*) AS n FROM orders
+        WHERE status = 'cancelled'
+          AND cancel_reason = 'Payment not completed'
+          AND cancelled_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 14 DAY)`
+    );
+
     const asDate = (v) => (v instanceof Date ? v.toISOString() : (v ?? null));
 
     res.json({
@@ -360,6 +374,7 @@ router.get(
       })),
       pendingReviewCount: Number(reviews.n),
       newFeedbackCount: Number(feedback.n),
+      abandonedCheckoutCount: Number(abandoned.n),
     });
   })
 );

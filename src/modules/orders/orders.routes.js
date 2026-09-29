@@ -19,6 +19,7 @@ adminOrdersRouter.get(
       from: z.string().datetime().optional(),
       to: z.string().datetime().optional(),
       q: z.string().trim().max(80).optional(),
+      abandoned: z.coerce.boolean().optional(),
     }),
   }),
   asyncHandler(async (req, res) => {

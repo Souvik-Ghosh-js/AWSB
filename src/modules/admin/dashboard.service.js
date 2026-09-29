@@ -66,6 +66,19 @@ export async function getDashboard() {
 
   const lowStockCount = await countLowStock();
 
+  // A shopper who reaches payment and never completes it is not "pending" for
+  // long — the sweeper (every 10 min) auto-cancels it once RESERVATION_MINUTES
+  // passes, tagging cancel_reason so it's distinguishable from a cancel the
+  // customer or an admin actually chose. That auto-cancel is the useful signal
+  // to surface, not the raw pending_payment count, which is normally near-zero
+  // and only ever reflects the last few minutes of checkouts in progress.
+  const [[abandoned]] = await pool.execute(
+    `SELECT COUNT(*) AS n FROM orders
+      WHERE status = 'cancelled'
+        AND cancel_reason = 'Payment not completed'
+        AND cancelled_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 14 DAY)`
+  );
+
   return {
     revenue: {
       today,
@@ -83,6 +96,7 @@ export async function getDashboard() {
     low_stock_count: lowStockCount,
     recent_orders: recentOrders,
     unread_notifications: Number(notifications.n),
+    abandoned_checkout_count: Number(abandoned.n),
   };
 }
 

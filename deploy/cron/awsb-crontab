@@ -4,9 +4,15 @@
 # that ran it. This file is the reference copy, so you can see what is
 # scheduled without running `crontab -l`, and reinstall it by hand if needed.
 #
-# To install manually (replace /home/ubuntu/awsb with your actual path):
+# To install manually, replace /home/ubuntu/awsb/api below with your actual
+# API_DIR — that is REPO_ROOT itself for a standalone backend checkout (the
+# "split" layout), or REPO_ROOT/backend for a monorepo checkout with
+# frontend/admin as siblings (the "monorepo" layout). install.sh detects this
+# automatically and gets it right; this file is a static reference copy, so
+# it can drift from what was actually installed — check `crontab -l` on the
+# box for the ground truth.
 #     crontab -e
-# then paste the block below, with REPO_ROOT and LOG_DIR expanded.
+# then paste the block below, with REPO_ROOT, API_DIR and LOG_DIR expanded.
 #
 # To see what is currently scheduled:
 #     crontab -l
@@ -33,7 +39,7 @@
 #
 # If this job stops running, abandoned checkouts silently eat your stock and
 # products will show as out of stock while you still have them on the shelf.
-*/10 * * * * cd /home/ubuntu/awsb/api && /usr/bin/env node src/scripts/release-stale-reservations.js >> /home/ubuntu/awsb-logs/sweep.log 2>&1
+*/10 * * * * cd /home/ubuntu/awsb && /usr/bin/env node src/scripts/release-stale-reservations.js >> /home/ubuntu/awsb-logs/sweep.log 2>&1
 
 # ---------------------------------------------------------------------------
 # Nightly database backup — 02:30 server time

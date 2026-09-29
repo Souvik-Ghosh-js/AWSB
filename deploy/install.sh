@@ -1124,7 +1124,7 @@ install_cron() {
     cat >> "${tmp_cron}" <<EOF
 # BEGIN AWSB — managed by deploy/install.sh, do not edit between these markers
 # Release stock held by abandoned pending_payment orders, every 10 minutes.
-*/10 * * * * cd ${REPO_ROOT}/backend && /usr/bin/env node src/scripts/release-stale-reservations.js >> ${LOG_DIR}/sweep.log 2>&1
+*/10 * * * * cd ${API_DIR} && /usr/bin/env node src/scripts/release-stale-reservations.js >> ${LOG_DIR}/sweep.log 2>&1
 
 # Nightly database backup at 02:30 server time.
 30 2 * * * ${REPO_ROOT}/deploy/backup.sh >> ${LOG_DIR}/backup.log 2>&1
@@ -1138,8 +1138,8 @@ EOF
     crontab "${tmp_cron}"
     log "Installed cron jobs (sweeper every 10 min, backup nightly, cert renewal)."
 
-    if [[ ! -f "${REPO_ROOT}/backend/src/scripts/release-stale-reservations.js" ]]; then
-        warn "backend/src/scripts/release-stale-reservations.js does not exist yet."
+    if [[ ! -f "${API_DIR}/src/scripts/release-stale-reservations.js" ]]; then
+        warn "src/scripts/release-stale-reservations.js does not exist yet at ${API_DIR}."
         warn "The sweeper cron entry is installed but will fail until it does."
         warn "Until then, stock from abandoned checkouts is NOT released."
     fi

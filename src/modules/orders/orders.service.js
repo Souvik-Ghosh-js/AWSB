@@ -286,13 +286,16 @@ async function audit(conn, actorId, action, entityId, before, after) {
   );
 }
 
-export async function listOrders({ status, from, to, q, page = 1, limit = 20 }) {
+export async function listOrders({ status, from, to, q, abandoned, page = 1, limit = 20 }) {
   const where = [];
   const params = [];
 
   if (status) { where.push('o.status = ?'); params.push(status); }
   if (from) { where.push('o.created_at >= ?'); params.push(from); }
   if (to) { where.push('o.created_at <= ?'); params.push(to); }
+  // A checkout the sweeper auto-cancelled for non-payment, distinct from a
+  // cancel the customer or an admin actually chose — see dashboard.service.js.
+  if (abandoned) { where.push("o.status = 'cancelled' AND o.cancel_reason = 'Payment not completed'"); }
   if (q) {
     where.push('(o.order_number LIKE ? OR o.ship_email LIKE ? OR o.ship_phone LIKE ? OR o.ship_full_name LIKE ?)');
     const like = `%${q}%`;
