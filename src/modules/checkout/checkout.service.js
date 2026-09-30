@@ -5,6 +5,7 @@ import { ApiError } from '../../middleware/error.js';
 import { calculateDiscount } from '../../utils/money.js';
 import { calculateShipping } from '../../services/shipping/zones.js';
 import { reserveStock } from './reservation.service.js';
+import { notifyStockChanged } from '../../services/revalidate.js';
 
 const razorpay = new Razorpay({
   key_id: env.RAZORPAY_KEY_ID,
@@ -75,10 +76,13 @@ export async function createCheckoutSession({ items, address, couponCode, custom
     throw ApiError.badRequest('Your cart is empty.', 'EMPTY_CART');
   }
 
-  return withTransaction(async (conn) => {
+  const touchedSlugs = new Set();
+
+  const result = await withTransaction(async (conn) => {
     // Locks rows and decrements stock, or throws with per-item problems.
     const variants = await reserveStock(conn, items);
     const byId = new Map(variants.map((v) => [Number(v.id), v]));
+    for (const v of variants) if (v.product_slug) touchedSlugs.add(v.product_slug);
 
     const lines = items.map((item) => {
       const v = byId.get(Number(item.variantId));
@@ -195,6 +199,13 @@ export async function createCheckoutSession({ items, address, couponCode, custom
       },
     };
   });
+
+  // Outside the transaction, after commit: stock is reserved the moment a
+  // checkout session is created (not on payment success), so the storefront
+  // should stop showing these as fully in stock right away too.
+  for (const slug of touchedSlugs) void notifyStockChanged(slug);
+
+  return result;
 }
 
 /** Look up our order id from a Razorpay order id. */

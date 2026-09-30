@@ -23,6 +23,12 @@ const schema = z.object({
   // needs an explicit CORS entry. Optional: a shop that has not put the
   // admin panel online yet still boots.
   ADMIN_URL: blank(z.string().url()),
+  // Shared secret for POST {SITE_URL}/api/revalidate, called whenever stock
+  // actually changes so the storefront's 5-minute ISR cache does not leave
+  // the shop grid and a product page disagreeing about "in stock" for the
+  // rest of that window. Optional: without it, stock still updates on the
+  // normal cache timer, just slower — see services/revalidate.js.
+  REVALIDATE_SECRET: blank(z.string().min(16)),
 
   DB_HOST: z.string().min(1),
   DB_PORT: z.coerce.number().int().positive().default(3306),

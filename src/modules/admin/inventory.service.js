@@ -37,7 +37,8 @@ export async function adjustStock({
     // same starting quantity and the ledger records a balance that never
     // existed.
     const [rows] = await conn.execute(
-      `SELECT v.id, v.stock_qty, v.low_stock_threshold, v.sku, v.size_ml, v.size_unit, p.name AS product_name
+      `SELECT v.id, v.stock_qty, v.low_stock_threshold, v.sku, v.size_ml, v.size_unit,
+              p.name AS product_name, p.slug AS product_slug
          FROM product_variants v
          JOIN products p ON p.id = v.product_id
         WHERE v.id = :id FOR UPDATE`,
@@ -93,6 +94,7 @@ export async function adjustStock({
       variant_id: String(variantId),
       sku: variant.sku,
       product_name: variant.product_name,
+      product_slug: variant.product_slug,
       size_ml: variant.size_ml,
       size_unit: variant.size_unit,
       previous_qty: current,

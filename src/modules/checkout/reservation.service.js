@@ -1,6 +1,7 @@
 import { withTransaction } from '../../db/pool.js';
 import { ApiError } from '../../middleware/error.js';
 import { formatVariantSize } from '../catalog/catalog.pure.js';
+import { notifyStockChanged } from '../../services/revalidate.js';
 
 // Stock is reserved when the Razorpay order is CREATED, not when payment
 // succeeds. Otherwise two buyers can both pay for the last 3ml bottle and one
@@ -26,7 +27,7 @@ export async function reserveStock(conn, lines, orderId = null) {
 
   const [locked] = await conn.query(
     `SELECT v.id, v.sku, v.size_ml, v.size_unit, v.stock_qty, v.is_enabled, v.price_paise,
-            p.name AS product_name, p.status AS product_status
+            p.name AS product_name, p.slug AS product_slug, p.status AS product_status
        FROM product_variants v
        JOIN products p ON p.id = v.product_id
       WHERE v.id IN (?)
@@ -104,20 +105,32 @@ export async function reserveStock(conn, lines, orderId = null) {
  * Return reserved stock to the shelf. Used by cancellation, refunds and the
  * stale-reservation sweeper.
  */
+/**
+ * @returns {Promise<{count: number, slugs: string[]}>} count for logging/tests
+ *   that already relied on a number; slugs so callers can revalidate the
+ *   storefront's cache for exactly the products that changed, after commit.
+ */
 export async function releaseStock(conn, orderId, reason = 'cancellation', actorId = null) {
   const [items] = await conn.query(
     `SELECT variant_id, quantity FROM order_items
       WHERE order_id = ? AND variant_id IS NOT NULL`,
     [orderId]
   );
-  if (items.length === 0) return 0;
+  if (items.length === 0) return { count: 0, slugs: [] };
 
   const ids = [...new Set(items.map((i) => Number(i.variant_id)))].sort((a, b) => a - b);
   const [locked] = await conn.query(
-    'SELECT id, stock_qty FROM product_variants WHERE id IN (?) ORDER BY id FOR UPDATE',
+    `SELECT v.id, v.stock_qty, p.slug AS product_slug
+       FROM product_variants v
+       JOIN products p ON p.id = v.product_id
+      WHERE v.id IN (?)
+      ORDER BY v.id
+      FOR UPDATE`,
     [ids]
   );
   const stockById = new Map(locked.map((r) => [Number(r.id), Number(r.stock_qty)]));
+  const slugById = new Map(locked.map((r) => [Number(r.id), r.product_slug]));
+  const slugs = new Set();
 
   for (const item of items) {
     const variantId = Number(item.variant_id);
@@ -133,9 +146,10 @@ export async function releaseStock(conn, orderId, reason = 'cancellation', actor
       [variantId, qty, reason, orderId, actorId, current + qty, 'Stock returned']
     );
     stockById.set(variantId, current + qty);
+    if (slugById.get(variantId)) slugs.add(slugById.get(variantId));
   }
 
-  return items.length;
+  return { count: items.length, slugs: [...slugs] };
 }
 
 /**
@@ -143,7 +157,9 @@ export async function releaseStock(conn, orderId, reason = 'cancellation', actor
  * Run on a schedule; see deploy/cron.
  */
 export async function releaseStaleReservations(minutes) {
-  return withTransaction(async (conn) => {
+  const touchedSlugs = new Set();
+
+  const orderNumbers = await withTransaction(async (conn) => {
     const [stale] = await conn.query(
       `SELECT id, order_number FROM orders
         WHERE status = 'pending_payment'
@@ -155,7 +171,8 @@ export async function releaseStaleReservations(minutes) {
     );
 
     for (const order of stale) {
-      await releaseStock(conn, order.id, 'reservation_release');
+      const { slugs } = await releaseStock(conn, order.id, 'reservation_release');
+      for (const slug of slugs) touchedSlugs.add(slug);
       await conn.query(
         `UPDATE orders
             SET status = 'cancelled',
@@ -168,4 +185,8 @@ export async function releaseStaleReservations(minutes) {
 
     return stale.map((o) => o.order_number);
   });
+
+  for (const slug of touchedSlugs) void notifyStockChanged(slug);
+
+  return orderNumbers;
 }

@@ -6,6 +6,7 @@ import { validate } from '../../middleware/validate.js';
 import { requireAdmin } from '../../middleware/auth.js';
 import * as inventory from './inventory.service.js';
 import { MOVEMENT_REASONS } from './helpers/inventory-math.js';
+import { notifyStockChanged } from '../../services/revalidate.js';
 
 const router = Router();
 
@@ -51,6 +52,9 @@ router.patch(
           });
 
     res.json(result);
+    // Fire-and-forget, after the response: the admin should never wait on
+    // the storefront's cache for their own stock edit to save.
+    void notifyStockChanged(result.product_slug);
   })
 );
 

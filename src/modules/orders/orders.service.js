@@ -4,6 +4,7 @@ import { pool, withTransaction } from '../../db/pool.js';
 import { ApiError } from '../../middleware/error.js';
 import { releaseStock } from '../checkout/reservation.service.js';
 import { sendMail } from '../../services/mail/mailer.js';
+import { notifyStockChanged } from '../../services/revalidate.js';
 import { canTransition, buildTrackingUrl } from './state.js';
 
 const razorpay = new Razorpay({
@@ -158,12 +159,15 @@ export async function markDelivered(orderId, adminId) {
  * is returned in the same transaction.
  */
 export async function cancelOrder({ orderId, reason, adminId }) {
+  let releasedSlugs = [];
+
   const result = await withTransaction(async (conn) => {
     const [[order]] = await conn.query('SELECT * FROM orders WHERE id = ? FOR UPDATE', [orderId]);
     if (!order) throw ApiError.notFound('Order not found.');
     assertTransition(order.status, 'cancelled');
 
-    await releaseStock(conn, orderId, 'cancellation', adminId);
+    const released = await releaseStock(conn, orderId, 'cancellation', adminId);
+    releasedSlugs = released.slugs;
 
     await conn.query(
       `UPDATE orders
@@ -181,6 +185,8 @@ export async function cancelOrder({ orderId, reason, adminId }) {
 
     return { order, payment };
   });
+
+  for (const slug of releasedSlugs) void notifyStockChanged(slug);
 
   let refund = null;
 
