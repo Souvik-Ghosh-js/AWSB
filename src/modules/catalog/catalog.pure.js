@@ -4,6 +4,13 @@
 // services/shipping/pincode.js: this is the logic most worth unit-testing, and
 // it must stay testable without a database or a populated .env.
 
+// Attars lead every sort, regardless of which one is picked — the shop's
+// whole identity is attars; powders, bakhoor and dhoopbatti are a handful of
+// recent additions that should never push an attar off the first page just
+// because they happen to be newer or alphabetically earlier.
+const NON_ATTAR_FAMILIES_SQL =
+  "(p.scent_family IN ('Powder','Bakhoor','Dhoopbatti'))";
+
 /**
  * Sort key -> ORDER BY fragment.
  *
@@ -13,10 +20,10 @@
  * back to the default. Never change this to build SQL from user input.
  */
 const SORT_OPTIONS = Object.freeze({
-  newest: 'p.created_at DESC, p.id DESC',
-  price_asc: 'min_price_paise ASC, p.id ASC',
-  price_desc: 'min_price_paise DESC, p.id DESC',
-  name: 'p.name ASC, p.id ASC',
+  newest: `${NON_ATTAR_FAMILIES_SQL} ASC, p.created_at DESC, p.id DESC`,
+  price_asc: `${NON_ATTAR_FAMILIES_SQL} ASC, min_price_paise ASC, p.id ASC`,
+  price_desc: `${NON_ATTAR_FAMILIES_SQL} ASC, min_price_paise DESC, p.id DESC`,
+  name: `${NON_ATTAR_FAMILIES_SQL} ASC, p.name ASC, p.id ASC`,
 });
 
 export const SORT_KEYS = Object.freeze(Object.keys(SORT_OPTIONS));

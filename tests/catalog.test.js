@@ -192,6 +192,19 @@ test('sort: every advertised key resolves to a fragment', () => {
   }
 });
 
+test('sort: attars lead every sort, ahead of the sort key itself', () => {
+  // The shop's identity is attars; powders/bakhoor/dhoopbatti must never
+  // outrank one just for being newer, cheaper or alphabetically earlier.
+  for (const key of SORT_KEYS) {
+    const fragment = resolveSort(key);
+    assert.match(
+      fragment,
+      /^\(p\.scent_family IN \('Powder','Bakhoor','Dhoopbatti'\)\) ASC,/,
+      `${key} must sort non-attar families after attars`
+    );
+  }
+});
+
 test('sort: injection attempts never reach the ORDER BY clause', () => {
   const attacks = [
     "name; DROP TABLE products--",
