@@ -169,11 +169,21 @@ export function normaliseOrderNumber(orderNumber) {
  * may include a +91, spaces or dashes. Strip the same way checkout does so
  * the two sides of the comparison are guaranteed to line up.
  */
+/**
+ * Mirrors middleware/validate.js's phoneSchema transform exactly — a
+ * tracking lookup must normalise a typed-in number the same way checkout
+ * normalised it before storing ship_phone, including a leading 0 (the
+ * STD/trunk-prefix habit), or a customer who typed their number that way at
+ * checkout can never find their own order again by phone.
+ */
 export function normalisePhone(phone) {
-  return String(phone ?? '')
+  const digits = String(phone ?? '')
     .trim()
     .replace(/[\s\-()]/g, '')
-    .replace(/^(\+?91)/, '');
+    .replace(/^\+/, '');
+  if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
+  return digits;
 }
 
 /**

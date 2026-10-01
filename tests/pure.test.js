@@ -9,6 +9,7 @@ import { formatPaise, groupIndian, calculateDiscount, rupeesToPaise } from '../s
 import { isValidPincode } from '../src/services/shipping/pincode.js';
 import { verifyCheckoutSignature, verifyWebhookSignature } from '../src/services/payments/signature.js';
 import { pickLargestFontAwb, isPlausibleAwb, normaliseCandidate } from '../src/services/ocr/awb.js';
+import { phoneSchema } from '../src/middleware/validate.js';
 
 test('money: paise conversion avoids float drift', () => {
   assert.equal(rupeesToPaise(450.5), 45050);
@@ -128,4 +129,15 @@ test('ocr: returns null when nothing on the label looks like an AWB', () => {
     { text: '700136', confidence: 90, bbox: { x0: 0, y0: 20, x1: 60, y1: 34 } },
   ];
   assert.equal(pickLargestFontAwb(words), null);
+});
+
+test('phoneSchema: tolerates +91, 91, and a leading 0 the same way the frontend does', () => {
+  assert.equal(phoneSchema.parse('7003356210'), '7003356210');
+  assert.equal(phoneSchema.parse('+91 7003356210'), '7003356210');
+  assert.equal(phoneSchema.parse('917003356210'), '7003356210');
+  // The STD/trunk-prefix habit: a real, recurring source of checkout 400s
+  // until this matched frontend/src/lib/validation.ts's normalisePhone().
+  assert.equal(phoneSchema.parse('07003356210'), '7003356210');
+  assert.equal(phoneSchema.parse('070033-56210'), '7003356210');
+  assert.throws(() => phoneSchema.parse('123456789'), /10-digit/);
 });

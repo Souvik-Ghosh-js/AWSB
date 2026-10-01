@@ -22,11 +22,25 @@ export function validate(schemas) {
 // These encode the shop's real rules, so they stay consistent across
 // checkout, admin and customer routes.
 
-/** Indian mobile: 10 digits starting 6-9. Tolerates +91 and spacing. */
+/**
+ * Indian mobile: 10 digits starting 6-9. Tolerates +91/91 and a leading 0
+ * (the STD/trunk-prefix habit — "07003356210" is how plenty of shoppers type
+ * their own number), spacing and hyphens.
+ *
+ * Mirrors frontend/src/lib/validation.ts's normalisePhone() exactly — that
+ * function already accepts a leading 0, so a shopper who gets through the
+ * frontend's own validation with one typed must not then 400 here. This was
+ * a real, recurring checkout failure before the two sides were aligned.
+ */
 export const phoneSchema = z
   .string()
   .trim()
-  .transform((v) => v.replace(/[\s\-()]/g, '').replace(/^(\+?91)/, ''))
+  .transform((v) => {
+    const digits = v.replace(/[\s\-()]/g, '').replace(/^\+/, '');
+    if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+    if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
+    return digits;
+  })
   .refine((v) => /^[6-9][0-9]{9}$/.test(v), 'Enter a valid 10-digit mobile number.');
 
 /** Indian pincode: exactly 6 digits, never starting with 0. */
