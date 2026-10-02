@@ -99,7 +99,13 @@ const NO_DEEP_LINK_COURIER = {
 };
 
 const TRACKING = 'EE123456789IN';
-const SHIPMENT = { tracking_number: TRACKING, tracking_url: null };
+// camelCase deliberately: this is the exact shape orders.service.js's
+// shipOrder() hand-builds ({ trackingNumber, trackingUrl }), not a raw DB
+// row — a snake_case fixture here let a real bug (both orderShipped and
+// resolveTrackingUrl reading tracking_number/tracking_url, which never
+// existed on the real object) pass every test while emailing an empty
+// tracking number on every live shipped order.
+const SHIPMENT = { trackingNumber: TRACKING, trackingUrl: null };
 
 /** Every template's common shape. */
 function assertWellFormed(result, label) {
@@ -214,11 +220,11 @@ test('resolveTrackingUrl refuses to build a link for a non-deep-link courier', (
   );
   // A snapshotted URL on the shipment wins over the template.
   assert.equal(
-    resolveTrackingUrl({ ...SHIPMENT, tracking_url: 'https://example.com/snapshot' }, DEEP_LINK_COURIER),
+    resolveTrackingUrl({ ...SHIPMENT, trackingUrl: 'https://example.com/snapshot' }, DEEP_LINK_COURIER),
     'https://example.com/snapshot'
   );
   // Missing pieces must yield null rather than a half-built URL.
-  assert.equal(resolveTrackingUrl({ tracking_number: null }, DEEP_LINK_COURIER), null);
+  assert.equal(resolveTrackingUrl({ trackingNumber: null }, DEEP_LINK_COURIER), null);
   assert.equal(resolveTrackingUrl(SHIPMENT, null), null);
 });
 

@@ -140,11 +140,15 @@ function greetingName(order) {
 export function resolveTrackingUrl(shipment, courier) {
   if (!courier || courier.supports_deep_link !== true) return null;
 
-  const snapshot = shipment?.tracking_url;
+  // shipment here is the camelCase object orders.service.js's shipOrder()
+  // builds by hand ({ trackingNumber, trackingUrl }), not a raw DB row — the
+  // snake_case field names this used to read were never actually present on
+  // it, so every shipped-order email sent an empty tracking number.
+  const snapshot = shipment?.trackingUrl;
   if (snapshot && String(snapshot).trim() !== '') return String(snapshot);
 
   const template = courier.tracking_url_template;
-  const number = shipment?.tracking_number;
+  const number = shipment?.trackingNumber;
   if (!template || !number) return null;
   if (!String(template).includes('{TRACKING_NUMBER}')) return null;
 
@@ -233,7 +237,9 @@ export function orderShipped(order, items = [], shipment = {}, courier = {}, opt
   const base = opts.siteUrl;
   const displayItems = items.map(toDisplayItem);
   const orderNumber = order.order_number ?? '';
-  const trackingNumber = shipment?.tracking_number ?? '';
+  // Same camelCase shape as resolveTrackingUrl above — shipment is the
+  // hand-built { trackingNumber, trackingUrl } object, not a DB row.
+  const trackingNumber = shipment?.trackingNumber ?? '';
   const courierName = courier?.name ?? 'our courier partner';
   const deepLink = resolveTrackingUrl(shipment, courier);
   const landing = landingPage(courier);
