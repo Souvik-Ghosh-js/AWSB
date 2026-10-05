@@ -331,7 +331,9 @@ export function orderDelivered(order, items = [], opts = {}) {
   const reviewable = (items ?? []).filter((it) => it.slug || it.product_slug);
   const reviewLinks = reviewable.map((it) => {
     const slug = it.slug ?? it.product_slug;
-    const href = url(`product/${encodeURIComponent(slug)}`, base);
+    // ?review=1 opens the review form on arrival instead of leaving the
+    // shopper to find "Write a review" themselves on the product page.
+    const href = url(`product/${encodeURIComponent(slug)}?review=1#reviews`, base);
     const name = it.product_name ?? it.name ?? slug;
     return `<li style="margin-bottom:6px;"><a href="${escapeHtml(href)}" style="color:${BRAND.brandSoft}; text-decoration:underline;">${escapeHtml(name)}</a></li>`;
   });
@@ -352,7 +354,7 @@ export function orderDelivered(order, items = [], opts = {}) {
     `Dear ${greetingName(order)}, your order ${orderNumber} has been delivered. Thank you for letting us be part of your collection.`,
     'An attar unfolds over hours rather than minutes. Give it a little time on the skin before you judge it - and then, if you would, tell us what you found.',
     reviewable.length
-      ? `Review what you bought:\n${reviewable.map((it) => `  ${it.product_name ?? it.name}: ${url(`product/${encodeURIComponent(it.slug ?? it.product_slug)}`, base)}`).join('\n')}`
+      ? `Review what you bought:\n${reviewable.map((it) => `  ${it.product_name ?? it.name}: ${url(`product/${encodeURIComponent(it.slug ?? it.product_slug)}?review=1#reviews`, base)}`).join('\n')}`
       : `Write a review: ${url('shop', base)}`,
     'Something not right? Reply to this email or call us on 7003356210 and we will put it right.',
   ]);

@@ -360,6 +360,12 @@ test('delivered email invites a review and links to each product page', () => {
   assert.ok(mail.html.includes(`${SITE}/product/waalid-shamama`), 'product link missing');
   assert.ok(mail.html.includes(`${SITE}/product/ruh-khus`), 'product link missing');
   assert.match(mail.html, /review/i, 'no review invitation');
+  // ?review=1 opens the review form on arrival instead of leaving the
+  // shopper to find "Write a review" themselves on the product page.
+  assert.ok(
+    mail.html.includes(`${SITE}/product/waalid-shamama?review=1#reviews`),
+    'review link does not open the form directly'
+  );
 });
 
 test('cancellation states the refund amount and the 5-7 working day window', () => {

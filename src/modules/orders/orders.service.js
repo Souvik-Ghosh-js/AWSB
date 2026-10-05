@@ -140,18 +140,32 @@ export async function markDelivered(orderId, adminId) {
       [orderId]
     );
     await audit(conn, adminId, 'order.delivered', orderId, { from: order.status }, { to: 'delivered' });
-    return order;
+
+    // order_items has no slug of its own (just the denormalised product_name
+    // snapshot) — orderDelivered's review links need one, so join it in here
+    // rather than leave the template guessing. A product deleted since the
+    // sale drops that one review link rather than crash the email.
+    const [items] = await conn.query(
+      `SELECT oi.*, p.slug
+         FROM order_items oi
+         LEFT JOIN product_variants v ON v.id = oi.variant_id
+         LEFT JOIN products p ON p.id = v.product_id
+        WHERE oi.order_id = ?`,
+      [orderId]
+    );
+
+    return { order, items };
   });
 
   await sendMail({
-    to: result.ship_email,
+    to: result.order.ship_email,
     template: 'orderDelivered',
-    subject: `Thank you — ${result.order_number} delivered`,
-    data: { args: [result, result.items ?? []] },
-    orderId: Number(result.id),
+    subject: `Thank you — ${result.order.order_number} delivered`,
+    data: { args: [result.order, result.items] },
+    orderId: Number(result.order.id),
   });
 
-  return { orderNumber: result.order_number, status: 'delivered' };
+  return { orderNumber: result.order.order_number, status: 'delivered' };
 }
 
 /**
