@@ -69,7 +69,13 @@ const schema = z.object({
 
   RESERVATION_MINUTES: z.coerce.number().int().positive().default(30),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(900_000),
+  // Sized for an anonymous storefront visitor.
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(300),
+  // Admin routes get their own, separate bucket (same window) — staff are
+  // authenticated, not anonymous, and the admin panel's own notification
+  // poll alone is ~45 requests per window per open tab, well before any
+  // other admin page view is counted.
+  ADMIN_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(2000),
 });
 
 const parsed = schema.safeParse(process.env);

@@ -5,7 +5,7 @@ import { ApiError } from '../../middleware/error.js';
 import { calculateDiscount } from '../../utils/money.js';
 import { calculateShipping } from '../../services/shipping/zones.js';
 import { reserveStock } from './reservation.service.js';
-import { notifyStockChanged } from '../../services/revalidate.js';
+import { notifyProductChanged } from '../../services/revalidate.js';
 
 const razorpay = new Razorpay({
   key_id: env.RAZORPAY_KEY_ID,
@@ -203,7 +203,7 @@ export async function createCheckoutSession({ items, address, couponCode, custom
   // Outside the transaction, after commit: stock is reserved the moment a
   // checkout session is created (not on payment success), so the storefront
   // should stop showing these as fully in stock right away too.
-  for (const slug of touchedSlugs) void notifyStockChanged(slug);
+  for (const slug of touchedSlugs) void notifyProductChanged(slug);
 
   return result;
 }

@@ -5,6 +5,7 @@ import rateLimit from 'express-rate-limit';
 import { asyncHandler, ApiError } from '../../middleware/error.js';
 import { validate } from '../../middleware/validate.js';
 import { createReview, listReviewsForProduct } from './reviews.service.js';
+import { notifyProductChanged } from '../../services/revalidate.js';
 
 const router = Router();
 
@@ -45,7 +46,13 @@ router.post(
   reviewLimiter,
   validate({ body: createBody }),
   asyncHandler(async (req, res) => {
-    res.status(201).json(await createReview(req.body));
+    const result = await createReview(req.body);
+    res.status(201).json(result);
+    // Fire-and-forget, after the response: the reviewer should never wait on
+    // the storefront's cache for their own submission to save. Goes live
+    // immediately in the database regardless of whether this call succeeds —
+    // it only controls how soon the product page itself reflects it.
+    void notifyProductChanged(req.body.productSlug);
   })
 );
 

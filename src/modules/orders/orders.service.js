@@ -4,7 +4,7 @@ import { pool, withTransaction } from '../../db/pool.js';
 import { ApiError } from '../../middleware/error.js';
 import { releaseStock } from '../checkout/reservation.service.js';
 import { sendMail } from '../../services/mail/mailer.js';
-import { notifyStockChanged } from '../../services/revalidate.js';
+import { notifyProductChanged } from '../../services/revalidate.js';
 import { canTransition, buildTrackingUrl } from './state.js';
 
 const razorpay = new Razorpay({
@@ -200,7 +200,7 @@ export async function cancelOrder({ orderId, reason, adminId }) {
     return { order, payment };
   });
 
-  for (const slug of releasedSlugs) void notifyStockChanged(slug);
+  for (const slug of releasedSlugs) void notifyProductChanged(slug);
 
   let refund = null;
 

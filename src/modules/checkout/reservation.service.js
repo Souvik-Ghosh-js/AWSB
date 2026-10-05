@@ -1,7 +1,7 @@
 import { withTransaction } from '../../db/pool.js';
 import { ApiError } from '../../middleware/error.js';
 import { formatVariantSize } from '../catalog/catalog.pure.js';
-import { notifyStockChanged } from '../../services/revalidate.js';
+import { notifyProductChanged } from '../../services/revalidate.js';
 
 // Stock is reserved when the Razorpay order is CREATED, not when payment
 // succeeds. Otherwise two buyers can both pay for the last 3ml bottle and one
@@ -186,7 +186,7 @@ export async function releaseStaleReservations(minutes) {
     return stale.map((o) => o.order_number);
   });
 
-  for (const slug of touchedSlugs) void notifyStockChanged(slug);
+  for (const slug of touchedSlugs) void notifyProductChanged(slug);
 
   return orderNumbers;
 }

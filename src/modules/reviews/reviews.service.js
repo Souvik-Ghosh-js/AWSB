@@ -4,9 +4,10 @@ import { paginate, buildPage } from '../catalog/catalog.pure.js';
 import { shapeReview } from '../catalog/catalog.service.js';
 
 /**
- * Create a review. No proof of purchase required — anyone can leave one,
- * same as most shops; it still lands 'pending' and is invisible until an
- * admin approves it, which is the real moderation gate.
+ * Create a review. No proof of purchase required, and no moderation queue —
+ * it goes live immediately. An admin can still pull a review down after the
+ * fact from /admin/reviews (reject or delete), which is now the only
+ * moderation that exists for this.
  */
 export async function createReview({ productSlug, rating, title, body, authorName }, conn = pool) {
   const [[product]] = await conn.query(
@@ -21,7 +22,7 @@ export async function createReview({ productSlug, rating, title, body, authorNam
     `INSERT INTO reviews
        (product_id, rating, title, body, author_name, status, is_verified_purchase)
      VALUES
-       (:productId, :rating, :title, :body, :authorName, 'pending', FALSE)`,
+       (:productId, :rating, :title, :body, :authorName, 'approved', FALSE)`,
     {
       productId: product.id,
       rating: Number(rating),
@@ -33,9 +34,9 @@ export async function createReview({ productSlug, rating, title, body, authorNam
 
   return {
     id: Number(result.insertId),
-    status: 'pending',
+    status: 'approved',
     isVerifiedPurchase: false,
-    message: 'Thank you. Your review will appear once it has been checked.',
+    message: 'Thank you — your review is live.',
   };
 }
 

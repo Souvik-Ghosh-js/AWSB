@@ -62,6 +62,31 @@ export function createApp() {
       max: env.RATE_LIMIT_MAX,
       standardHeaders: true,
       legacyHeaders: false,
+      // Admin traffic is already gated by requireAdmin (real authentication,
+      // not an anonymous visitor), and shares nothing in common with the
+      // abuse this limiter exists to stop on public endpoints. Without this,
+      // a handful of staff on one office connection — plus the admin panel's
+      // own 20-second notification-bell poll, multiplied across however many
+      // tabs are open — exhausts the SAME bucket real shoppers draw from,
+      // and 429s started appearing on ordinary storefront traffic that never
+      // came near the actual limit on its own. Confirmed via server logs:
+      // every recent 429 traced back to one IP hammering
+      // /admin/notifications, not storefront abuse.
+      skip: (req) => req.path.startsWith('/admin/'),
+      message: { error: { code: 'RATE_LIMITED', message: 'Too many requests. Please slow down.' } },
+    })
+  );
+
+  // Admin's own, separate, far more generous limiter — still real protection
+  // against a compromised/scripted admin token, just not sized for a public
+  // anonymous visitor.
+  app.use(
+    '/api/v1/admin',
+    rateLimit({
+      windowMs: env.RATE_LIMIT_WINDOW_MS,
+      max: env.ADMIN_RATE_LIMIT_MAX,
+      standardHeaders: true,
+      legacyHeaders: false,
       message: { error: { code: 'RATE_LIMITED', message: 'Too many requests. Please slow down.' } },
     })
   );
