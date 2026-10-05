@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import rateLimit from 'express-rate-limit';
 
 import { asyncHandler, ApiError } from '../../middleware/error.js';
 import { validate } from '../../middleware/validate.js';
@@ -7,9 +8,22 @@ import { createReview, listReviewsForProduct } from './reviews.service.js';
 
 const router = Router();
 
+// No proof of purchase gates this anymore, so it is a public, unauthenticated
+// write endpoint like feedback's — same per-IP limit for the same reason.
+const reviewLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: {
+      code: 'TOO_MANY_REQUESTS',
+      message: 'You have submitted several reviews already. Please try again later.',
+    },
+  },
+});
+
 const createBody = z.object({
-  orderNumber: z.string().trim().min(1).max(20),
-  email: z.string().trim().email().max(255),
   productSlug: z.string().trim().min(1).max(160),
   rating: z.coerce.number().int().min(1).max(5), // chk_rating enforces this too
   title: z.string().trim().max(160).optional(),
@@ -28,6 +42,7 @@ const listQuery = z.object({
 
 router.post(
   '/reviews',
+  reviewLimiter,
   validate({ body: createBody }),
   asyncHandler(async (req, res) => {
     res.status(201).json(await createReview(req.body));
